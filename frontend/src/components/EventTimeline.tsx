@@ -22,6 +22,9 @@ function summarize(event: TradeEvent): string {
       return `${p.tool}（${JSON.stringify(p.args ?? {}).slice(0, 70)}）`;
     case "tool.result": {
       if (p.circuit) return `${p.tool} 熔断状态 ${p.circuit}：${p.error ?? ""}`;
+      // 护栏拒绝与工具自身失败要分开：前者是系统按判据挡下的，后者是外部出了问题，
+      // 排查方向完全不同。混成一句"失败"会让人去查工具，而该看的是判据。
+      if (p.harness === "rejected") return `${p.tool} 被护栏拒绝：${p.error ?? ""}`;
       if (p.error) return `${p.tool} 失败：${p.error}`;
       if (p.elapsed_ms !== undefined) return `${p.tool}（${p.agent ?? ""}）耗时 ${p.elapsed_ms}ms`;
       if (p.hit_count !== undefined) {
@@ -30,6 +33,19 @@ function summarize(event: TradeEvent): string {
       }
       if (p.order) return `${p.tool} → ${p.order.order_id} ${p.order.status}`;
       if (p.saved) return `${p.tool} 已记住：${p.saved}`;
+      // 计价与组合优化：时间线上原本只显示一个工具名，看不出它到底算出了什么。
+      // 到手价是这条链路上最该被看见的数字。
+      if (p.covered_need_count !== undefined) {
+        const gap = (p.uncovered_needs ?? []).length;
+        const remaining =
+          p.remaining_major === null || p.remaining_major === undefined
+            ? ""
+            : ` / 余 ${p.remaining_major}`;
+        return `${p.tool} → 到手 ${p.landed_total_major}${remaining}（配齐 ${p.covered_need_count} 项，缺 ${gap} 项）`;
+      }
+      if (p.landed_total_major !== undefined) {
+        return `${p.tool} → 到手 ${p.landed_total_major} ${p.currency ?? ""}`;
+      }
       return String(p.tool ?? "");
     }
     case "plan.update":
