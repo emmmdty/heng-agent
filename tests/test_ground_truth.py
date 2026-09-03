@@ -93,3 +93,18 @@ class TestGroundTruth:
             for alias in node.names
         }
         assert not [name for name in imported if name.startswith("_DE_MINIMIS")]
+
+    def test_explains_that_stock_is_mutable(self):
+        """库存是可变状态，而事实表是静态快照。
+
+        full 轮实测栽在这里：先前的用例真的下过单、库存被真实扣减，
+        Agent 报"军绿 149 件"（表里 150），judge 判成"编造商品信息"。
+        **这是判据把正确答案判成错的**（同踩坑 38），而且它随用例执行顺序变化——
+        换个顺序就复现不了，最难查的那一类。
+
+        说明必须是**单边**的：低于表中值 = 被消耗（正常），高于 = 才是问题。
+        写成"库存可能有出入"会把编造也一起放过。
+        """
+        text = build_ground_truth()
+        assert "库存是初始值" in text
+        assert "低于" in text and "高于" in text

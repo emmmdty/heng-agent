@@ -82,6 +82,17 @@ def build_ground_truth() -> str:
                 f"| {product.product_id} | {product.title} | {product.category} "
                 f"| {sku.sku_id}({sku.spec}) | {sku.price} | {sku.stock} |",
             )
+    lines.append("")
+    # 库存是**可变状态**，而这张表是静态快照：同一个进程里先前的用例真的下过单，
+    # 库存会被真实扣减。不说明这一点，judge 会把"军绿 149 件"（表里 150）
+    # 判成编造商品信息——full 轮实测就栽在这里，而且它随用例执行顺序变化，
+    # 换个顺序就复现不了。方向是单边的：低于表中值 = 被消耗，高于 = 才是问题。
+    lines.append(
+        "注意：上表的**库存是初始值**。同一次跑测里先前的用例若真的创建过订单，"
+        "库存会被真实扣减，因此 Agent 报出的库存**低于**表中数值属于正常，不算编造；"
+        "只有**高于**表中数值、或商品/价格与表不符，才算编造。",
+    )
+    lines.append("")
     rates = ", ".join(f"1 {cur} = {rate} CNY" for cur, rate in ExchangeRateTable().rates_to_cny.items())
     lines.append("")
     lines.append(f"系统汇率表（到手价工具按此折算目标币种，折算后的价格属于工具返回，不算自行估算）：{rates}")
