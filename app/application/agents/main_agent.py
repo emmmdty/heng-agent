@@ -44,6 +44,7 @@ from app.application.tools.task_dispatch_tool import build_task_dispatch_tool
 from app.domain.buyer.preference import PreferenceStore
 from app.domain.session.ports.session_store import SessionStore
 from app.infrastructure.eventbus import TradeEventBus
+from app.application.harness.confirmation import ConfirmationTracker
 from app.application.harness.order_provenance import OrderProvenanceTracker
 from app.infrastructure.harness_middleware import build_tool_middlewares
 from app.infrastructure.llm import create_chat_model
@@ -71,6 +72,7 @@ class MainAgentFactory:
         sequencing: Optional[SequencingTracker] = None,
         loop_detector: Optional[LoopDetector] = None,
         order_provenance: Optional[OrderProvenanceTracker] = None,
+        confirmation: Optional[ConfirmationTracker] = None,
         preference_selector: Optional[PreferenceSelector] = None,
     ) -> None:
         self._settings = settings
@@ -85,6 +87,7 @@ class MainAgentFactory:
         # 护栏判定器按会话累积状态，须跨 Agent 实例共享（与熔断注册表同理）
         self._sequencing = sequencing or SequencingTracker()
         self._order_provenance = order_provenance or OrderProvenanceTracker()
+        self._confirmation = confirmation or ConfirmationTracker()
         self._loop_detector = loop_detector or LoopDetector(
             repeat_threshold=settings.loop_repeat_threshold,
         )
@@ -103,6 +106,7 @@ class MainAgentFactory:
             sequencing=self._sequencing,
             loop_detector=self._loop_detector,
             order_provenance=self._order_provenance,
+            confirmation=self._confirmation,
         )
 
     def build(self, restored_state: Optional[AgentState] = None) -> Agent:

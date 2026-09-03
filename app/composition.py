@@ -27,6 +27,7 @@ from app.application.agents.trade_agent import TradeAgentFactory
 from app.application.harness.assertions import SequencingTracker
 from app.application.harness.drift_detector import DriftDetector
 from app.application.harness.loop_detector import LoopDetector
+from app.application.harness.confirmation import ConfirmationTracker
 from app.application.harness.order_provenance import OrderProvenanceTracker
 from app.application.memory.preference_selector import PreferenceSelector
 from app.application.usecases.catalog_search import CatalogSearchUseCase
@@ -231,6 +232,8 @@ async def build_container() -> Container:
     loop_detector = LoopDetector(repeat_threshold=settings.loop_repeat_threshold)
     # 下单参数出处校验（十四期）：与顺序断言同样按会话累积，必须全进程唯一
     order_provenance_tracker = OrderProvenanceTracker()
+    # 确认必须跨越一次买家交互（十八期）：轮次按会话累积，同样全进程唯一
+    confirmation_tracker = ConfirmationTracker()
 
     def tool_middlewares() -> list:
         """每个工具一条新链（中间件实例不共享），但判定器是同一批。
@@ -245,6 +248,7 @@ async def build_container() -> Container:
             sequencing=sequencing_tracker,
             loop_detector=loop_detector,
             order_provenance=order_provenance_tracker,
+            confirmation=confirmation_tracker,
         )
     # 漂移检测默认关：它会改变模型行为（并可选地额外调轻量模型），
     # 必须是显式开启的选择；关时注入 None，主链路零开销
@@ -281,6 +285,7 @@ async def build_container() -> Container:
         sequencing=sequencing_tracker,
         loop_detector=loop_detector,
         order_provenance=order_provenance_tracker,
+        confirmation=confirmation_tracker,
         preference_selector=preference_selector,
     )
     def _forget_session(session_id: str) -> None:
@@ -296,6 +301,7 @@ async def build_container() -> Container:
         """
         sequencing_tracker.reset(session_id)
         order_provenance_tracker.reset(session_id)
+        confirmation_tracker.reset(session_id)
         orchestrator.forget_session(session_id)
 
     sessions = SessionRegistry(

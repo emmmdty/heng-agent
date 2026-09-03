@@ -104,6 +104,7 @@ class MainAgentOrchestrator:
         semantic_cache: Optional[SemanticCache] = None,
         output_guard_enabled: bool = True,
         loop_detector: Optional[LoopDetector] = None,
+        confirmation: Optional[ConfirmationTracker] = None,
         token_budget_total: int = 0,
         drift_detector: Optional[DriftDetector] = None,
         preference_selector: Optional[PreferenceSelector] = None,
@@ -117,6 +118,9 @@ class MainAgentOrchestrator:
         self._semantic_cache = semantic_cache
         self._output_guard_enabled = output_guard_enabled
         self._loop_detector = loop_detector
+        # 确认必须跨越一次买家交互：轮次只有编排器知道（中间件在工具边界，
+        # 看不到轮次），所以由这里在每轮开始时告知一次
+        self._confirmation = confirmation
         self._token_budget_total = token_budget_total
         self._drift_detector = drift_detector
         # 默认 selector 不带 embedder，退化为“按时间倒序取 top_k”，单测与无凭据环境可直接跑
@@ -142,6 +146,10 @@ class MainAgentOrchestrator:
             self._bus.publish(session_id, "error", {"message": "输出审核命中内部信息，已脱敏后下发"})
         return cleaned
 
+    def _begin_turn(self, session_id: str, has_history: bool = False) -> None:
+        if self._confirmation is not None:
+            self._confirmation.begin_turn(session_id, has_history)
+
     def forget_session(self, session_id: str) -> None:
         """清掉这个会话在编排器里的进程内状态。
 
@@ -154,6 +162,8 @@ class MainAgentOrchestrator:
         """
         if self._number_sources is not None:
             self._number_sources.reset(session_id)
+        if self._confirmation is not None:
+            self._confirmation.reset(session_id)
         self._loop_detector.reset(session_id)
         if self._drift_detector is not None:
             self._drift_detector.reset(session_id)
@@ -185,6 +195,10 @@ class MainAgentOrchestrator:
             summary_before = agent.state.summary
             # 语义缓存：仅首轮（无历史上下文）且非写操作意图时尝试命中，命中则零模型调用
             has_history = bool(agent.state.context)
+            # 轮次 +1：确认必须跨越一次买家交互（十八期），判据靠这个计数。
+            # 必须放在 has_history 算出来之后——服务重启后恢复的会话内存计数是 0，
+            # 而买家下一句可能正是"确认下单"，当成第一轮会误杀一次合法下单。
+            self._begin_turn(session_id, has_history)
             cached = await self._lookup_cache(intent, has_history)
             if cached is not None:
                 cache_hit = True

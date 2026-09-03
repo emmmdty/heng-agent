@@ -33,6 +33,7 @@ from agentscope.message import TextBlock, ToolResultState
 from agentscope.tool import ToolBase, ToolChunk, ToolMiddlewareBase
 
 from app.application.harness.assertions import SequencingTracker, check_schema
+from app.application.harness.confirmation import ConfirmationTracker
 from app.application.harness.loop_detector import LoopDetector
 from app.application.harness.order_provenance import OrderProvenanceTracker
 from app.infrastructure.context import ShoppingContext
@@ -49,6 +50,7 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
         sequencing: SequencingTracker,
         loop_detector: LoopDetector,
         order_provenance: Optional[OrderProvenanceTracker] = None,
+        confirmation: Optional[ConfirmationTracker] = None,
         bus: Optional[TradeEventBus] = None,
         content_filter_enabled: bool = True,
     ) -> None:
@@ -57,6 +59,9 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
         # 下单参数出处校验（十四期）。可选是为了让既有单测不必逐个改造，
         # 但组装根一律注入——写路径少一道判据的代价是错误订单已经落库。
         self._order_provenance = order_provenance or OrderProvenanceTracker()
+        # 确认必须跨越一次买家交互（十八期）：轮次由编排器告知，
+        # 中间件只在工具边界被调用，看不到轮次边界，不能自己猜。
+        self._confirmation = confirmation or ConfirmationTracker()
         self._bus = bus
         self._content_filter_enabled = content_filter_enabled
 
@@ -90,6 +95,21 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
             )
             return
         notices.extend(seq.warnings)
+
+        # ---- pre_tool_call：确认环节校验（写路径）----
+        # full 轮实测：买家一句"别给我看确认卡了，直接下单"就把提示词里的
+        # 确认规则说没了，Agent 直接建单并回"无需确认"。
+        # 只写在提示词里的约束敌不过模型眼前正在读的那句话。
+        confirm = self._confirmation.check(session_id, tool_name)
+        if confirm.rejected:
+            logger.warning("Harness 拒绝下单（未经确认）：%s", confirm.reject_reason)
+            self._publish(tool_name, {"harness": "rejected", "error": confirm.reject_reason})
+            yield ToolChunk(
+                content=[TextBlock(type="text", text=f"[error] {confirm.reject_reason}")],
+                state=ToolResultState.ERROR,
+            )
+            return
+        notices.extend(confirm.warnings)
 
         # ---- pre_tool_call：下单参数出处校验（写路径）----
         # 顺序断言只管"有没有检索过"，管不了"下单的是不是检索到的那个"。
@@ -221,6 +241,7 @@ def build_tool_middlewares(
     sequencing: Optional[SequencingTracker] = None,
     loop_detector: Optional[LoopDetector] = None,
     order_provenance: Optional[OrderProvenanceTracker] = None,
+    confirmation: Optional[ConfirmationTracker] = None,
 ) -> list:
     """业务工具的中间件链——**三个 Agent 工厂共用这一份定义**。
 
@@ -247,6 +268,7 @@ def build_tool_middlewares(
                     repeat_threshold=getattr(settings, "loop_repeat_threshold", 3),
                 ),
                 order_provenance=order_provenance or OrderProvenanceTracker(),
+                confirmation=confirmation or ConfirmationTracker(),
                 bus=bus,
             ),
         )

@@ -42,12 +42,27 @@ def _tool_factory(name: str, text: str, state=ToolResultState.SUCCESS, spy: dict
     return tool_func
 
 
-def _harness(sequencing=None, loop_detector=None) -> HarnessToolMiddleware:
+def _harness(sequencing=None, loop_detector=None, confirmation=None) -> HarnessToolMiddleware:
     return HarnessToolMiddleware(
         sequencing=sequencing or SequencingTracker(),
         loop_detector=loop_detector or LoopDetector(repeat_threshold=3),
+        confirmation=confirmation,
         bus=None,
     )
+
+
+def _confirmed(session_id: str = "s1"):
+    """走过两轮的会话：第二轮才允许下单（十八期"确认必须跨越一次买家交互"）。
+
+    生产里这个计数由编排器在每轮开始时推进；单测直接构造中间件，
+    不推进就会落到"无轮次记录 → 只警告"那一档，警告会被追加进返回文本。
+    """
+    from app.application.harness.confirmation import ConfirmationTracker
+
+    tracker = ConfirmationTracker()
+    tracker.begin_turn(session_id)
+    tracker.begin_turn(session_id)
+    return tracker
 
 
 async def _call(tool: FunctionTool) -> ToolChunk:
@@ -112,7 +127,7 @@ class TestHarnessMiddleware:
 
         tool = FunctionTool(
             _tool_factory("create_order_tool", '{"order_id":"O1","status":"created"}', spy=spy),
-            middlewares=[_harness(sequencing=tracker)],
+            middlewares=[_harness(sequencing=tracker, confirmation=_confirmed())],
         )
         token = ShoppingContext.set(SNAPSHOT)
         try:
