@@ -129,3 +129,39 @@ class TestMinimumSampleSize:
             max_ratio=0.08, min_amounts=30,
         )
         assert verdict.passed is False
+
+
+class TestAuditFollowsTheReportDataDir:
+    """审计要跟着报告走，而不是死认仓库默认目录。
+
+    对着非默认 DATA_DIR 的实例跑评测时（比如另起一个不抢 Qdrant 文件锁的实例），
+    报告落在仓库 eval/、流水落在别处，门禁两头对不上——
+    而原来的报错指向"流水可能被清过"，把人引向完全错误的方向。
+    """
+
+    def test_reads_data_dir_from_the_report_health_block(self, tmp_path):
+        from scripts.eval.audit_number_provenance import conversations_dir_from_report
+
+        (tmp_path / "conversations").mkdir()
+        report = {"health": {"data_dir": str(tmp_path)}}
+        assert conversations_dir_from_report(report) == tmp_path / "conversations"
+
+    def test_returns_none_when_the_directory_is_gone(self, tmp_path):
+        """记着但目录不在了：回落到默认，而不是拿一个不存在的路径去扫。"""
+        from scripts.eval.audit_number_provenance import conversations_dir_from_report
+
+        assert conversations_dir_from_report({"health": {"data_dir": str(tmp_path / "nope")}}) is None
+
+    def test_returns_none_for_old_reports(self):
+        """九期到十五期之间的报告不记 data_dir，不能因此报错。"""
+        from scripts.eval.audit_number_provenance import conversations_dir_from_report
+
+        assert conversations_dir_from_report({"health": {}}) is None
+        assert conversations_dir_from_report({}) is None
+
+    def test_health_reports_data_dir(self):
+        import inspect
+
+        from app.presentation import server
+
+        assert '"data_dir": str(c.settings.data_dir)' in inspect.getsource(server)

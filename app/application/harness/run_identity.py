@@ -88,7 +88,8 @@ def describe_run(health: dict, judge_model: str = "") -> str:
         f"被测模型 {_text(health.get('model'))}"
         f"｜评审模型 {_text(judge_model)}"
         f"｜提示词 {_text(health.get('prompt_fingerprint'))}"
-        f"｜精排 {_switch(retrieval.get('reranker'))}"
+        f"｜精排 {_probed_switch(retrieval.get('reranker'), _probe_of(retrieval, 'reranker'))}"
+        f"{_dead_vector_path(retrieval)}"
         f"｜字面索引 {_switch(retrieval.get('lexical_index'))}"
         f"｜字面门限 {_text(retrieval.get('lexical_gate'))}"
         f"｜语义缓存 {_switch(health.get('semantic_cache'))}"
@@ -106,6 +107,37 @@ def _describe_faults(faults: Any) -> str:
     if not isinstance(faults, dict) or not faults.get("active"):
         return ""
     return f"｜**故障注入 {'/'.join(faults['active'])}**"
+
+
+def _probe_of(retrieval: Any, component: str) -> Any:
+    """取深度探活结果；没探活或形状不对时返回 None（配置行任何情况下都得渲染得出来）。"""
+    probe = retrieval.get("probe") if isinstance(retrieval, dict) else None
+    return probe.get(component) if isinstance(probe, dict) else None
+
+
+def _probed_switch(configured: Any, probe: Any) -> str:
+    """配置 + 实测两截。
+
+    十四期实测踩到的：配置行写着"精排 开"，而那一轮精排是 502、一次都没跑过。
+    **没探活时不加任何后缀**——多一个"未知"标记只会让每行都变长，
+    真正要跳出来的是"配了但没生效"那一种。
+    """
+    rendered = _switch(configured)
+    if configured and isinstance(probe, str) and probe.startswith("error"):
+        return f"{rendered}(实测不可达)"
+    return rendered
+
+
+def _dead_vector_path(retrieval: Any) -> str:
+    """向量路挂掉要单独说：它解释了为什么召回档位掉到 bm25_only。
+
+    配置行里原本没有这一格——向量路一直被当成"配了就有"，
+    而十四期那一轮它整条不可用，报告上却看不出来。
+    """
+    probe = _probe_of(retrieval, "embedding")
+    if isinstance(probe, str) and probe.startswith("error"):
+        return "｜**向量路 实测不可达**"
+    return ""
 
 
 def _describe_code(code: Any) -> str:

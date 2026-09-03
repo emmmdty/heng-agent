@@ -57,6 +57,21 @@ def latest_report(directory: Path | None = None) -> dict:
     return json.loads(reports[-1].read_text(encoding="utf-8"))
 
 
+def conversations_dir_from_report(report: dict) -> Path | None:
+    """报告记下的那一轮，流水落在哪。
+
+    对着非默认 `DATA_DIR` 的实例跑评测时（比如另起一个不抢 Qdrant 文件锁的实例），
+    报告在仓库 `eval/`、流水在别处，门禁两头对不上——而报错会指向
+    "流水可能被清过"，把人引向完全错误的方向。
+    报告里既然抄了 `/health`，就让审计跟着它走。
+    """
+    data_dir = ((report.get("health") or {}).get("data_dir") or "").strip()
+    if not data_dir:
+        return None
+    candidate = Path(data_dir) / "conversations"
+    return candidate if candidate.is_dir() else None
+
+
 def sessions_from_report(report: dict) -> set[str]:
     """报告里这一轮跑了哪些会话。
 
@@ -86,8 +101,10 @@ def select_audits(audits: list[SessionAudit], sessions: set[str] | None) -> list
     if not kept:
         raise SystemExit(
             f"报告里的 {len(sessions)} 个会话在流水目录里一份都找不到"
-            f"（如 {sorted(sessions)[0]}）。\n"
-            f"  流水可能被清过；重跑一轮再扫：make eval-smoke",
+            f"（如 {sorted(sessions)[0]}）。可能的原因按概率排：\n"
+            f"  1. 这份报告是对着**另一个 DATA_DIR** 的实例跑的（报告在仓库 eval/、"
+            f"流水在别处）——用 --dir <那个实例的 data/conversations> 重扫；\n"
+            f"  2. 流水被清过——重跑一轮再扫：make eval-smoke",
         )
     return kept
 
@@ -166,7 +183,12 @@ def render(audits: list[SessionAudit], summary: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dir", default=str(DEFAULT_DIR), help="conversations 目录")
+    parser.add_argument(
+        "--dir",
+        default=None,
+        help="conversations 目录（不传时：有 --report 就跟着报告记下的 DATA_DIR 走，"
+             "否则用仓库默认的 data/conversations）",
+    )
     parser.add_argument("--json", action="store_true", help="只输出汇总 JSON")
     parser.add_argument(
         "--report",
@@ -188,11 +210,25 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    audits = audit_directory(Path(args.dir))
     scope = None
+    report = None
     if args.report is not None:
         report = (latest_report() if args.report == "latest"
                   else json.loads(Path(args.report).read_text(encoding="utf-8")))
+
+    # 目录解析顺序：显式 --dir > 报告记下的 DATA_DIR > 仓库默认。
+    # 中间那一档是为了让审计**跟着报告走**：对着非默认 DATA_DIR 的实例跑评测时，
+    # 报告在仓库 eval/、流水在别处，两头对不上。
+    directory = Path(args.dir) if args.dir else None
+    if directory is None and report is not None:
+        directory = conversations_dir_from_report(report)
+    if directory is None:
+        directory = DEFAULT_DIR
+    if args.dir is None and directory != DEFAULT_DIR:
+        print(f"（按报告记下的 DATA_DIR 扫描：{directory}）\n")
+
+    audits = audit_directory(directory)
+    if report is not None:
         scope = sessions_from_report(report)
         audits = select_audits(audits, scope)
     summary = summarize(audits)

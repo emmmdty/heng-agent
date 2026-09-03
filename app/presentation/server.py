@@ -35,6 +35,7 @@ from app.application.agents.orchestrator import SubmitIntentInput
 from app.application.harness.run_identity import code_identity
 from app.composition import Container, build_container
 from app.domain.queue.ports.task_queue import IntentTask, TaskStatus
+from app.infrastructure.retrieval_probe import probe_retrieval
 from app.infrastructure.settings import load_settings
 from app.presentation.connection import ConnectionManager
 from app.presentation.dto import (
@@ -106,7 +107,7 @@ def build_app() -> FastAPI:
     )
 
     @api.get("/health")
-    async def health() -> dict:
+    async def health(deep: bool = False) -> dict:
         """依赖连通性一并报出，避免"进程活着但存储已挂"被当成健康。"""
         c = container()
         database = "disabled"
@@ -120,7 +121,7 @@ def build_app() -> FastAPI:
         redis_state = "disabled"
         if c.cache.enabled:
             redis_state = "ok" if await c.cache.ping() else "error"
-        return {
+        payload: dict = {
             "status": "ok",
             "model": c.settings.llm_model,
             "database": database,
@@ -134,6 +135,10 @@ def build_app() -> FastAPI:
             # 九期踩过——进程 16:43 起、修复 16:49 落地、没重启，两条定向回归
             # 全打在旧代码上，而这份 /health 报的配置一字不差。
             "code": code_identity(),
+            # 这一轮的流水落在哪：报告原样抄走，金额出处审计据此找得到对应的流水。
+            # 少了它，对着非默认 DATA_DIR 的实例跑完评测，门禁会两头对不上
+            # （报告在仓库 eval/、流水在别处），而报错指向的是"流水被清过"。
+            "data_dir": str(c.settings.data_dir),
             "retrieval": {
                 "reranker": c.reranker_enabled,
                 "lexical_index": c.lexical_index is not None,
@@ -144,6 +149,12 @@ def build_app() -> FastAPI:
             # 然后去改检索参数（踩坑 32 的同一条）。
             "fault_injection": c.faults.describe(),
         }
+        if deep:
+            # 深度探活只在有人明确要读数时做（评测开跑前 / make health）。
+            # 默认不做：/health 同时是容器存活探针，每 10 秒打一次外部服务
+            # 既浪费又会把探针本身变得不稳定（外部服务抖一下，容器被判死）。
+            payload["retrieval"]["probe"] = await probe_retrieval(c.settings)
+        return payload
 
     # 故障注入端点**按开关注册**：默认关的进程里这条路径根本不存在。
     # 读的是进程启动时的环境变量，与组装根同一个判据（settings.fault_injection_enabled）。

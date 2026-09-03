@@ -400,7 +400,8 @@ async def _guard_semantic_cache(allow: bool) -> dict:
     """
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            health = (await client.get(f"{BASE_URL}/health")).json()
+            # deep=1：探活外部检索依赖，让配置行报"实际生效了什么"而不是"配了什么"
+            health = (await client.get(f"{BASE_URL}/health?deep=1", timeout=30)).json()
     except Exception as err:  # noqa: BLE001 —— 拿不到 health 不阻断，后续请求自会报错
         print(f"警告：无法读取 /health（{err}），跳过缓存检查", flush=True)
         return {}

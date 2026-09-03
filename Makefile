@@ -62,7 +62,7 @@ health:
 	@curl -s -m5 -XPOST http://127.0.0.1:11436/v1/embeddings \
 	  -H 'Content-Type: application/json' -d '{"model":"q","input":"x"}' | head -c 60; echo "  <- embedding"
 	@curl -s -m5 http://127.0.0.1:11437/health; echo "  <- reranker"
-	@curl -s -m5 http://127.0.0.1:8000/health; echo "  <- app"
+	@curl -s -m10 "http://127.0.0.1:8000/health?deep=1"; echo "  <- app（deep=1 会真的去探两条隧道）"
 
 serve:
 	uv run uvicorn app.presentation.server:app --port 8000
