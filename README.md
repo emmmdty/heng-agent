@@ -107,6 +107,19 @@ docker/                # docker-compose.yaml（app + worker + qdrant + redis + f
   多件总价由 `quote_basket_tool` + 领域层 `quote_basket()` 提供——运费按**一次履约**计
   （不是各单品运费之和）、免税额度按**整批小计**判定（海关对包裹整体计税）。
   补这个工具的原因是评测实测：模型自己把两个单品到手价相加会算错，且会把运费重复计一次。
+- **预算感知的组合优化**：`optimize_basket_tool` 给定预算与多个需求，暴力枚举出最优组合
+  （目标函数字典序：覆盖需求最多 → **保住靠前的需求** → 到手价最低 → product_id 定序），
+  返回预算余额、缺口价签、"再加多少能配上"、分开买与合并买的差额。
+  这四个数此前全部由模型自己减，金额出处校验里长期是 `suspected_difference`。
+  选它做深的理由是**可验证性**：60 SPU 的空间小到能枚举出真最优解，
+  ground truth 确定性可算，不需要 judge 打分——能拿回确定性判据的就别留给 judge。
+  需求优先级来自 `needs` 的传入顺序（显式契约）：原本"同覆盖数取最便宜"实算出过荒唐答案——
+  预算 250 美元、需求「耳机 219 + 充电器 22.39」时它配了个 31.54 的充电器、剩 218 美元。
+- **政策数字同样要有出处**：关税的应税基数（`taxable_base_major`，超出免税额度的那部分）
+  与免税额度的**原生口径**（`de_minimis_threshold_native_major`，US 就是 800 USD）
+  都随报价返回。前者防"1,199 × 12% ≈ ¥3.48"这种基数错、结果碰巧对的推导；
+  后者防跨币种表述时模型自己反折出一个 `$800`——同一个 `$800` 被堵了三次，
+  前两次加字段，这次改的是规则表的**定义**（存原生口径，折算交给汇率表）。
 - **约束贴在数字旁边**：`landed_price` 内联 `combine_hint` 说明"不可相加、改调 quote_basket_tool"。
   只写在系统提示词里实测拦不住——隔着几千 token 的规则，敌不过模型眼前正在读的那个数。
   同 `filtered_out` 的思路：工具返回值要能自证边界
@@ -151,16 +164,21 @@ uv run python -m app.worker
 
 ```bash
 make check          # = pytest + 标注集自检 + 用例自检 + 金额出处门禁
+make check-ci       # CI 档：去掉金额出处（它扫的是本地跑测产物，CI 上没有）
 ```
+
+CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项**刻意不进 CI**：
+它扫 `data/conversations/`（gitignore 的跑测产物），CI 全新 checkout 上没有流水，
+而给它开"没数据就当通过"的旁路比红灯更危险——0 处金额算出来的 0% 会被当成满分。
 
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 462 个单测：domain / 召回降级与过滤回传 / 计价规则 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 512 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：10 条 case（--tag smoke）
-make eval                                  # 评测回归全量：28 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
+make eval                                  # 评测回归全量：31 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
 uv run python scripts/eval/run_product_recall.py --compare-strategies   # 六档召回对比
 uv run python scripts/eval/run_product_recall.py --sweep-lexical-gate 0,4,8 --sweep-base hybrid_rerank  # 门限标定
 uv run python scripts/eval/validate_datasets.py       # 召回标注集自检（105 商品 + 22 品类）
