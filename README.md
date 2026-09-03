@@ -190,7 +190,7 @@ CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项*
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 605 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 616 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：12 条 case（--tag smoke）
