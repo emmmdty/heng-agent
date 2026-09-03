@@ -1,0 +1,105 @@
+{"query": "旅行三件套", "kind": "lexical", "relevant": ["P1001", "P1011"], "note": "名词类：三件套整套；P1007 是毛巾三件装，属易混淆项，不算相关"}
+{"query": "抗造不含塑料的旅行三件套", "kind": "lexical", "relevant": ["P1001"], "note": "属性类：抗造 + 无塑料，只有 P1001 同时满足"}
+{"query": "记忆棉颈枕的旅行套装", "kind": "lexical", "relevant": ["P1011"], "note": "属性类：记忆棉是 P1011 独有"}
+{"query": "颈枕", "kind": "lexical", "relevant": ["P1012", "P1011", "P1001"], "note": "名词类：单品颈枕最相关，含颈枕的套装次之"}
+{"query": "遮光眼罩", "kind": "lexical", "relevant": ["P1013", "P1058", "P1011", "P1001"], "note": "名词类：真丝遮光眼罩最相关，蒸汽眼罩次之"}
+{"query": "天然材质不要塑料的眼罩", "kind": "lexical", "relevant": ["P1013"], "note": "属性类：真丝天然材质"}
+{"query": "登机箱", "kind": "lexical", "relevant": ["P1002", "P1016"], "note": "名词类：20寸登机尺寸；P1015 是24寸托运，不算"}
+{"query": "24寸托运行李箱", "kind": "lexical", "relevant": ["P1015"], "note": "名词类 + 尺寸约束"}
+{"query": "铝框行李箱 结实抗摔", "kind": "lexical", "relevant": ["P1002", "P1015", "P1050"], "note": "属性类：铝框/全铝三款"}
+{"query": "便宜的塑料硬壳登机箱", "kind": "lexical", "relevant": ["P1016"], "note": "属性类：PC 塑料箱体 + 平价"}
+{"query": "压缩收纳袋 行李分装", "kind": "lexical", "relevant": ["P1014", "P1059"], "note": "名词类：两款压缩收纳"}
+{"query": "折叠双肩包", "kind": "lexical", "relevant": ["P1003"], "note": "名词类"}
+{"query": "防水卷口背包 涉水用", "kind": "lexical", "relevant": ["P1018"], "note": "属性类"}
+{"query": "亚麻材质的收纳", "kind": "lexical", "relevant": ["P1019"], "note": "气质类 + 材质"}
+{"query": "桑蚕丝睡袋内胆", "kind": "lexical", "relevant": ["P1009"], "note": "名词类；P1043 是羽绒睡袋，不是内胆"}
+{"query": "露营用的羽绒睡袋", "kind": "lexical", "relevant": ["P1043"], "note": "名词类：整只睡袋而非内胆"}
+{"query": "速干毛巾", "kind": "lexical", "relevant": ["P1007"], "note": "名词类"}
+{"query": "隔音耳塞 睡觉用", "kind": "lexical", "relevant": ["P1053"], "note": "名词类"}
+{"query": "RFID 防盗刷证件包", "kind": "lexical", "relevant": ["P1051"], "note": "属性类"}
+{"query": "行李秤", "kind": "lexical", "relevant": ["P1052"], "note": "名词类"}
+{"query": "行李捆扎带 带TSA锁", "kind": "lexical", "relevant": ["P1060"], "note": "名词类"}
+{"query": "折叠水壶 硅胶的", "kind": "lexical", "relevant": ["P1021"], "note": "属性类；P1045 是不锈钢保温壶，材质不符"}
+{"query": "保温水壶 不要塑料内胆", "kind": "lexical", "relevant": ["P1045"], "note": "属性类：316 不锈钢"}
+{"query": "降噪耳机", "kind": "lexical", "relevant": ["P1004", "P1023"], "note": "名词类：主动降噪两款；P1022 只有通话降噪，不算"}
+{"query": "预算内的入门蓝牙耳机", "kind": "lexical", "relevant": ["P1022"], "note": "气质口语类：入门价位"}
+{"query": "氮化镓充电器 全球插脚", "kind": "lexical", "relevant": ["P1005", "P1025"], "note": "属性类：全球插脚两款；P1024 是折叠插脚不含全球"}
+{"query": "100W 多口快充", "kind": "lexical", "relevant": ["P1025"], "note": "属性类 + 功率"}
+{"query": "迷你单口充电器", "kind": "lexical", "relevant": ["P1024"], "note": "属性类"}
+{"query": "移动电源 能带上飞机吗", "kind": "lexical", "relevant": ["P1026"], "note": "口语类：涉及锂电池空运限制"}
+{"query": "全球通用转换插头", "kind": "lexical", "relevant": ["P1028"], "note": "名词类"}
+{"query": "三合一数据线", "kind": "lexical", "relevant": ["P1027"], "note": "名词类"}
+{"query": "手机三脚架 旅拍", "kind": "lexical", "relevant": ["P1029"], "note": "名词类"}
+{"query": "读卡器", "kind": "lexical", "relevant": ["P1030"], "note": "名词类"}
+{"query": "中性气质的咖啡杯", "kind": "lexical", "relevant": ["P1032", "P1031"], "note": "气质类：中性色陶瓷最相关，粗陶马克杯次之"}
+{"query": "手工粗陶 侘寂风", "kind": "lexical", "relevant": ["P1031", "P1006"], "note": "气质类：同品牌两款粗陶"}
+{"query": "旅行茶具套装", "kind": "lexical", "relevant": ["P1006"], "note": "名词类"}
+{"query": "竹制餐具 环保无塑料", "kind": "lexical", "relevant": ["P1033"], "note": "属性类"}
+{"query": "软木隔热垫", "kind": "lexical", "relevant": ["P1037"], "note": "名词类"}
+{"query": "手冲咖啡壶", "kind": "lexical", "relevant": ["P1036"], "note": "名词类"}
+{"query": "便携挂烫机 出差用", "kind": "lexical", "relevant": ["P1055"], "note": "名词类"}
+{"query": "超轻晴雨伞", "kind": "lexical", "relevant": ["P1057"], "note": "属性类"}
+{"query": "露营灯 可充电防水", "kind": "lexical", "relevant": ["P1008", "P1039"], "note": "名词类：两款营地灯"}
+{"query": "太阳能充电的营地灯", "kind": "lexical", "relevant": ["P1039"], "note": "属性类：太阳能是 P1039 独有"}
+{"query": "登山杖", "kind": "lexical", "relevant": ["P1010", "P1047", "P1040"], "note": "名词类：三款梯度（钛/碳纤/铝）"}
+{"query": "碳纤维超轻登山杖", "kind": "lexical", "relevant": ["P1047"], "note": "属性类 + 材质"}
+{"query": "入门价位的铝合金登山杖", "kind": "lexical", "relevant": ["P1040"], "note": "气质口语类 + 价位"}
+{"query": "自动充气防潮垫", "kind": "lexical", "relevant": ["P1042"], "note": "名词类"}
+{"query": "折叠露营凳 承重要够", "kind": "lexical", "relevant": ["P1041"], "note": "属性类"}
+{"query": "钛合金炊具 无涂层", "kind": "lexical", "relevant": ["P1048"], "note": "属性类"}
+{"query": "超轻防风外套", "kind": "lexical", "relevant": ["P1046"], "note": "属性类"}
+{"query": "300元以内抗造又不含塑料的旅行装备", "kind": "lexical", "relevant": ["P1001", "P1013"], "price_max_major": 300, "note": "硬约束类：验证价格过滤 + 属性；P1009 桑蚕丝 329 元应被价格挡掉"}
+{"query": "预算100元以内的收纳用品", "kind": "lexical", "relevant": ["P1014", "P1059"], "price_max_major": 100, "note": "硬约束类：亚麻收纳套 P1019（129 元）超预算，不列为 relevant——标注必须与约束一致"}
+{"query": "能寄到美国的登山杖", "kind": "lexical", "relevant": ["P1010", "P1047", "P1040"], "ship_to": "US", "note": "硬约束类：三款均可寄美国"}
+{"query": "能寄到日本的天然材质家居", "kind": "lexical", "relevant": ["P1031", "P1034", "P1006"], "ship_to": "JP", "note": "硬约束类：ships_to 含 JP"}
+{"query": "500元以内能寄到欧洲的户外装备", "kind": "lexical", "relevant": ["P1039", "P1042", "P1048", "P1044"], "price_max_major": 500, "ship_to": "EU", "note": "硬约束类：价格 + 送达双约束"}
+{"query": "坐飞机脖子老是很难受有什么办法", "kind": "semantic", "relevant": ["P1012", "P1011", "P1001"], "note": "语义类：全程不含「颈枕」字面，考验向量召回"}
+{"query": "睡觉怕光想把眼睛遮起来", "kind": "semantic", "relevant": ["P1013", "P1058"], "note": "语义类：不含「眼罩」字面"}
+{"query": "怕行李太重被机场罚钱", "kind": "semantic", "relevant": ["P1052"], "note": "语义类：不含「行李秤」字面"}
+{"query": "想买个喝咖啡的杯子但别太花哨", "kind": "semantic", "relevant": ["P1032", "P1031"], "note": "语义类：气质表达，不含「中性色」字面"}
+{"query": "爬山膝盖不太好需要有东西支撑", "kind": "semantic", "relevant": ["P1010", "P1047", "P1040"], "note": "语义类：不含「登山杖」字面"}
+{"query": "在帐篷里睡地上又硬又凉", "kind": "semantic", "relevant": ["P1042"], "note": "语义类：不含「防潮垫」字面"}
+{"query": "出门在外手机没电很麻烦", "kind": "semantic", "relevant": ["P1026"], "note": "语义类：不含「移动电源」字面"}
+{"query": "去国外插座跟国内不一样插不进去", "kind": "semantic", "relevant": ["P1028"], "note": "语义类：不含「转换插头」字面"}
+{"query": "衣服压出褶子了没法见人", "kind": "semantic", "relevant": ["P1055"], "note": "语义类：不含「挂烫机」字面"}
+{"query": "又怕下雨又怕晒想带一个就够", "kind": "semantic", "relevant": ["P1057"], "note": "语义类：不含「晴雨伞」字面"}
+{"query": "洗完澡擦身体的东西要干得快", "kind": "semantic", "relevant": ["P1007"], "note": "语义类：不含「速干毛巾」字面"}
+{"query": "住青旅嫌床单不干净想自己带一层", "kind": "semantic", "relevant": ["P1009"], "note": "语义类：不含「睡袋内胆」字面"}
+{"query": "耳朵旁边太吵想安静一点睡觉", "kind": "semantic", "relevant": ["P1053"], "note": "语义类：不含「耳塞」字面"}
+{"query": "飞机上引擎声音太大受不了", "kind": "semantic", "relevant": ["P1004", "P1023", "P1053"], "note": "语义类：不含「降噪」字面；主动降噪耳机优于耳塞"}
+{"query": "夏天在外面走路热得不行想凉快点", "kind": "semantic", "relevant": ["P1054"], "note": "语义类：不含「风扇」字面"}
+{"query": "护照和卡片怕被隔空盗刷", "kind": "semantic", "relevant": ["P1051"], "note": "语义类：不含「RFID」「证件包」字面"}
+{"query": "传送带上的都长一个样容易拿错", "kind": "semantic", "relevant": ["P1060"], "note": "语义类：不含「捆扎带」字面，靠「易辨识」语义"}
+{"query": "东西太多箱子合不上想省点地方", "kind": "semantic", "relevant": ["P1059", "P1014"], "note": "语义类：不含「压缩」字面"}
+{"query": "脏鞋子不想跟衣服放一起", "kind": "semantic", "relevant": ["P1056"], "note": "语义类：不含「鞋袋」字面"}
+{"query": "酒店提供的那种一次性的不太敢穿", "kind": "semantic", "relevant": ["P1020"], "note": "语义类：不含「拖鞋」字面；靠自带替代语义"}
+{"query": "喝水的容器不想占地方喝完能收起来", "kind": "semantic", "relevant": ["P1021"], "note": "语义类：不含「折叠水壶」字面"}
+{"query": "想让水一直是热的到晚上还能喝", "kind": "semantic", "relevant": ["P1045"], "note": "语义类：不含「保温」字面"}
+{"query": "山里想自己开火做饭但装备要轻", "kind": "semantic", "relevant": ["P1048"], "note": "语义类：不含「炊具」字面"}
+{"query": "山上风大冷得很想套件轻的", "kind": "semantic", "relevant": ["P1046"], "note": "语义类：不含「外套」「防风」字面"}
+{"query": "晚上气温零下怕冻着", "kind": "semantic", "relevant": ["P1043"], "note": "语义类：不含「睡袋」字面"}
+{"query": "野外坐着休息不想直接坐地上", "kind": "semantic", "relevant": ["P1041"], "note": "语义类：不含「凳」字面"}
+{"query": "攀岩的时候要有能承住人的安全装备", "kind": "semantic", "relevant": ["P1044"], "note": "语义类：不含「绳」字面"}
+{"query": "手机拍视频老是拿不稳", "kind": "semantic", "relevant": ["P1029"], "note": "语义类：不含「三脚架」字面"}
+{"query": "相机里的照片想导到电脑", "kind": "semantic", "relevant": ["P1030"], "note": "语义类：不含「读卡器」字面"}
+{"query": "各种充电口都要带一根太麻烦", "kind": "semantic", "relevant": ["P1027"], "note": "语义类：不含「数据线」字面"}
+{"query": "笔记本和手机想用一个头同时充", "kind": "semantic", "relevant": ["P1025"], "note": "语义类：不含「充电器」字面；四口大功率款"}
+{"query": "只带一个小的给手机充就行", "kind": "semantic", "relevant": ["P1024"], "note": "语义类：不含「充电器」字面；迷你单口款"}
+{"query": "屋里想有点好闻的味道但别点火", "kind": "semantic", "relevant": ["P1035"], "note": "语义类：不含「香薰」「扩香」字面"}
+{"query": "热锅直接放桌上怕烫坏", "kind": "semantic", "relevant": ["P1037"], "note": "语义类：不含「隔热垫」字面"}
+{"query": "想在家自己磨了慢慢冲着喝", "kind": "semantic", "relevant": ["P1036"], "note": "语义类：不含「手冲壶」字面"}
+{"query": "在外面吃饭不想用一次性的", "kind": "semantic", "relevant": ["P1033"], "note": "语义类：不含「餐具」字面"}
+{"query": "沙发上想换个素净点的布面", "kind": "semantic", "relevant": ["P1034"], "note": "语义类：不含「抱枕套」字面"}
+{"query": "衣服放箱子里想透气一点别捂着", "kind": "semantic", "relevant": ["P1019"], "note": "语义类：不含「收纳套」字面；靠「亚麻透气」语义"}
+{"query": "下水划船怕包里东西湿了", "kind": "semantic", "relevant": ["P1018"], "note": "语义类：不含「防水背包」完整字面"}
+{"query": "出门就带个手机钥匙不想背大包", "kind": "semantic", "relevant": ["P1017"], "note": "语义类：不含「腰包」字面"}
+{"query": "预算很紧就想要个能装书的", "kind": "semantic", "relevant": ["P1049"], "note": "语义类：不含「背包」字面；平价款"}
+{"query": "想要个平时能塞进箱子的备用的", "kind": "semantic", "relevant": ["P1003"], "note": "语义类：不含「折叠背包」字面"}
+{"query": "想要个特别结实能用一辈子的箱子", "kind": "semantic", "relevant": ["P1050", "P1015"], "note": "语义类：不含「铝框」字面；全铝终身保修优先"}
+{"query": "东西太多需要一个能托运的大号", "kind": "semantic", "relevant": ["P1015"], "note": "语义类：不含「24寸」「行李箱」字面"}
+{"query": "预算有限想要个便宜耐用的箱子", "kind": "semantic", "relevant": ["P1016"], "note": "语义类：不含「硬壳」字面；平价 PC 款"}
+{"query": "天黑了想在营地挂个能照明的", "kind": "semantic", "relevant": ["P1008", "P1039"], "note": "语义类：不含「露营灯」字面；磁吸挂钩款优先"}
+{"query": "钥匙上想挂个应急能照亮的小东西", "kind": "semantic", "relevant": ["P1038"], "note": "语义类：不含「手电」字面"}
+{"query": "眼睛用久了酸胀想热敷一下", "kind": "semantic", "relevant": ["P1058"], "note": "语义类：不含「蒸汽眼罩」字面"}
+{"query": "泡茶的一整套想带着出门用", "kind": "semantic", "relevant": ["P1006"], "note": "语义类：不含「茶具」字面"}
+{"query": "想买个有手作感的东西送人", "kind": "semantic", "relevant": ["P1006", "P1031"], "note": "语义类：不含「手工」字面；粗陶手作类"}
