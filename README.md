@@ -120,6 +120,14 @@ docker/                # docker-compose.yaml（app + worker + qdrant + redis + f
   都随报价返回。前者防"1,199 × 12% ≈ ¥3.48"这种基数错、结果碰巧对的推导；
   后者防跨币种表述时模型自己反折出一个 `$800`——同一个 `$800` 被堵了三次，
   前两次加字段，这次改的是规则表的**定义**（存原生口径，折算交给汇率表）。
+- **写路径的出处校验**：下单的每一个商品都必须在本会话的工具返回里出现过——
+  `product_id` 无出处即硬拒（`sku_id` 只警告，因为 `filtered_out` 与组合报价
+  本来就不带 sku_id）。这是金额出处校验在写路径上的同一条缝，而后果更重：
+  回复里的数字错了买家看得出来，订单错了库存已经扣了。
+  同会话重复下单只提醒不拒绝（再买一单是合法诉求），提醒里带上已有订单号。
+  配套修掉一个零告警的接线缺口：Harness 中间件此前只挂在主 Agent 自己的工具上，
+  检索/计价/订单工具从没进过它——顺序硬拒、schema 断言、L3 注入过滤
+  在真正需要它们的地方一次都没跑过（`tests/test_harness_wiring.py` 钉住了这件事）。
 - **降级链可被端到端检验**：`FAULT_INJECTION_ENABLED=1` 时三个检索端口
   （embedding / vector_index / reranker）被包上装饰器，`POST /debug/faults` 运行时
   选择注入哪些，`eval/cases.yaml` 的用例可声明 `faults: [reranker]`。
@@ -182,12 +190,12 @@ CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项*
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 559 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 584 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：12 条 case（--tag smoke）
 uv run python scripts/eval_regression.py --dry-run   # 开跑前体检：前置全查一遍，一次模型调用都不发
-make eval                                  # 评测回归全量：40 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
+make eval                                  # 评测回归全量：42 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
 uv run python scripts/eval_regression.py --resume eval/partial-<stamp>.json  # 中断后续跑（前置用例自动补回）
 uv run python scripts/eval/run_product_recall.py --compare-strategies   # 六档召回对比
 uv run python scripts/eval/run_product_recall.py --sweep-lexical-gate 0,4,8 --sweep-base hybrid_rerank  # 门限标定
