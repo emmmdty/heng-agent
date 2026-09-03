@@ -165,3 +165,39 @@ class TestAuditFollowsTheReportDataDir:
         from app.presentation import server
 
         assert '"data_dir": str(c.settings.data_dir)' in inspect.getsource(server)
+
+
+class TestMinSessionsGuard:
+    """用例数太少同样不判定——金额数与用例数是两个独立的样本量维度。
+
+    实测：定向重跑 3 条用例的切片算出 10.2%（金额 49 处，过了金额下限），
+    而同期整轮是 4.9%。那 5 处无出处全部来自其中**一条**用例的
+    "超出预算多少"差额（bad-case 池里早已人工定为 wontfix）。
+    比率由个别用例主导时，它不构成结论。
+    """
+
+    def _summary(self, sessions: int, total: int, unsourced: int) -> dict:
+        return {
+            "sessions": sessions,
+            "total_amounts": total,
+            "unsourced_ratio": unsourced / total if total else 0.0,
+        }
+
+    def test_small_slice_is_not_judged(self):
+        from scripts.eval.audit_number_provenance import gate_verdict
+
+        verdict = gate_verdict(self._summary(3, 49, 5), max_ratio=0.08, min_amounts=30)
+        assert verdict.passed and "用例数不足" in verdict.reason
+
+    def test_full_round_is_judged(self):
+        from scripts.eval.audit_number_provenance import gate_verdict
+
+        verdict = gate_verdict(self._summary(12, 200, 30), max_ratio=0.08, min_amounts=30)
+        assert not verdict.passed, "用例数够了就该按比率判定"
+
+    def test_amount_guard_still_applies(self):
+        """两道守卫互不替代：用例数够、金额太少时仍然不判定。"""
+        from scripts.eval.audit_number_provenance import gate_verdict
+
+        verdict = gate_verdict(self._summary(12, 10, 5), max_ratio=0.08, min_amounts=30)
+        assert verdict.passed and "样本量不足" in verdict.reason

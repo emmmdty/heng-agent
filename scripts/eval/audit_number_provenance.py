@@ -115,7 +115,9 @@ class GateVerdict:
     reason: str
 
 
-def gate_verdict(summary: dict, max_ratio: float, min_amounts: int) -> GateVerdict:
+def gate_verdict(
+    summary: dict, max_ratio: float, min_amounts: int, min_sessions: int = 8,
+) -> GateVerdict:
     """门禁判定：样本量够了才用比率下结论。
 
     单条用例的报告只有十几处金额，1 处无出处 = 5.9%、2 处 = 11.8%——
@@ -128,6 +130,17 @@ def gate_verdict(summary: dict, max_ratio: float, min_amounts: int) -> GateVerdi
     """
     total = summary["total_amounts"]
     ratio = summary["unsourced_ratio"]
+    sessions = summary.get("sessions", 0)
+    if sessions and sessions < min_sessions:
+        # 用例数太少同样不能下结论，哪怕金额数够了：定向重跑三条用例时，
+        # 比率完全由其中一条决定（实测 3 条切片 10.2%，而同期整轮是 4.9%）。
+        # 金额数与用例数是两个独立的样本量维度，都得够。
+        return GateVerdict(True, (
+            f"用例数不足，门禁未判定：{sessions} 条 < 下限 {min_sessions} 条"
+            f"（金额 {total} 处，当前 {ratio:.1%}）。"
+            f"定向重跑的切片里比率由个别用例主导，不构成结论；"
+            f"要门禁真正生效，跑 make eval-smoke 或 make eval"
+        ))
     if total < min_amounts:
         return GateVerdict(True, (
             f"样本量不足，门禁未判定：金额 {total} 处 < 下限 {min_amounts} 处。"
@@ -203,6 +216,12 @@ def main() -> None:
         help="无出处金额率上限，超过则退出码 1（当回归门禁用）",
     )
     parser.add_argument(
+        "--min-sessions",
+        type=int,
+        default=8,
+        help="判定所需的最小用例数（定向重跑的切片里比率由个别用例主导）",
+    )
+    parser.add_argument(
         "--min-amounts",
         type=int,
         default=30,
@@ -235,7 +254,9 @@ def main() -> None:
     print(json.dumps(summary, ensure_ascii=False, indent=2) if args.json else render(audits, summary))
 
     if args.max_ratio is not None:
-        verdict = gate_verdict(summary, args.max_ratio, args.min_amounts)
+        verdict = gate_verdict(
+            summary, args.max_ratio, args.min_amounts, args.min_sessions,
+        )
         if not verdict.passed:
             print(f"\n[门禁不通过] {verdict.reason}", file=sys.stderr)
             raise SystemExit(1)

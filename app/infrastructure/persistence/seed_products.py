@@ -95,9 +95,10 @@ _EXTRA_SPECS: list[tuple] = [
     # 于是模型自己补了一个。同 filtered_out / combine_hint 那条：
     # 模型只能用你给它的东西作答，给不了就只能编——**缺失的信息要显式化**。
     ("P1022", "AeroHush Lite 半入耳蓝牙耳机", "AeroHush", "数码配件", "CN",
-     "半入耳 蓝牙 5.3 轻便 长续航 30小时 仅通话降噪 无主动降噪ANC 入门价位",
+     "半入耳 蓝牙 5.3 轻便 长续航 30小时 入门价位",
      ["CN", "US"], [("S1", "白色", 299.0, "CNY", 80)],
-     [("续航", "含仓 30 小时"), ("降噪", "仅通话降噪（麦克风侧），**无主动降噪 ANC**")]),
+     # 第二个 False 是 searchable=False：否定型说明只给模型看，不进字面索引
+     [("续航", "含仓 30 小时"), ("降噪", "仅通话降噪（麦克风侧），无主动降噪 ANC", False)]),
     ("P1023", "SilentBuds 主动降噪耳塞式耳机", "SilentBuds", "数码配件", "US",
      "主动降噪 ANC 深降噪 42dB 耳塞式 通勤 飞机 降噪耳机",
      ["CN", "US", "EU"], [("S1", "子夜蓝", 189.0, "USD", 30)], [("降噪", "深度 42dB")]),
@@ -207,7 +208,8 @@ def _build_extra() -> list[Product]:
                 category=category,
                 origin_country=origin,
                 description=desc,
-                highlights=[ProductHighlight(name, value) for name, value in highlights],
+                # 第三项（可选）是 searchable：否定型说明置 False，只上卡片不进索引
+                highlights=[ProductHighlight(*item) for item in highlights],
                 ships_to=list(ships_to),
                 skus=[
                     _sku(f"{pid}-{suffix}", spec, major, currency, stock)

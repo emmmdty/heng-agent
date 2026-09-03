@@ -105,3 +105,40 @@ class TestAbsentFeaturesAreExplicit:
                 f"{h.label}{h.detail}" for h in products[pid].highlights
             )
             assert "主动降噪" in blob and "无主动降噪" not in blob
+
+
+class TestNegativeAttributesStayOutOfTheIndex:
+    """否定型说明只上卡片，不进字面索引。
+
+    实测代价（做过一次才知道）：给半入耳款加了"无主动降噪 ANC"之后，
+    BM25 反而在"主动降噪耳机"这个 query 上更强地召回它——**字面检索不理解否定，
+    看见词就算命中**。模型于是在候选表里看到它，把它描述成"有主动降噪功能"，
+    比不加说明还糟。
+
+    所以分成两条路：卡片给模型看（它要靠这个做判断），索引不收。
+    """
+
+    def test_anc_terms_do_not_leak_into_the_index(self):
+        """断言的是"没有因为否定词而被匹配"，不是"完全不出现"。
+
+        半入耳款标题里有"耳机"，被"主动降噪 耳机"这个 query 召回到靠后的位置
+        属于正常字面匹配；要防的是它因为**"无主动降噪"里的那三个字**
+        被抬到真 ANC 商品的前面。
+        """
+        from app.infrastructure.retrieval.bm25_index import Bm25LexicalIndex
+
+        products = {p.product_id: p for p in _products()}
+        assert "主动降噪" not in products["P1022"].searchable_text()
+
+        index = Bm25LexicalIndex()
+        index.index(_products())
+        ranking = [hit.product_id for hit in index.search("主动降噪 耳机", top_n=8)]
+        assert ranking[:2] == ["P1023", "P1004"], "真有 ANC 的两款要排在最前"
+        if "P1022" in ranking:
+            assert ranking.index("P1022") > 1, "半入耳款不该排在真 ANC 商品之前"
+
+    def test_the_disclaimer_still_reaches_the_card(self):
+        """不进索引 ≠ 不给模型看：卡片上必须还有这句话。"""
+        lite = {p.product_id: p for p in _products()}["P1022"]
+        assert any("无主动降噪" in h.detail for h in lite.highlights)
+        assert "无主动降噪" not in lite.searchable_text()
