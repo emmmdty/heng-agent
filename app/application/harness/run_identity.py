@@ -93,7 +93,19 @@ def describe_run(health: dict, judge_model: str = "") -> str:
         f"｜字面门限 {_text(retrieval.get('lexical_gate'))}"
         f"｜语义缓存 {_switch(health.get('semantic_cache'))}"
         f"｜代码 {_describe_code(health.get('code'))}"
+        f"{_describe_faults(health.get('fault_injection'))}"
     )
+
+
+def _describe_faults(faults: Any) -> str:
+    """故障注入只在**真的注入了**的时候才占一格。
+
+    每多一个恒定不变的字段，真正变了的那个就更难被看见；
+    而一旦注入生效，它就是这一轮读数最该被归因到的东西。
+    """
+    if not isinstance(faults, dict) or not faults.get("active"):
+        return ""
+    return f"｜**故障注入 {'/'.join(faults['active'])}**"
 
 
 def _describe_code(code: Any) -> str:

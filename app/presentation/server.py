@@ -35,9 +35,11 @@ from app.application.agents.orchestrator import SubmitIntentInput
 from app.application.harness.run_identity import code_identity
 from app.composition import Container, build_container
 from app.domain.queue.ports.task_queue import IntentTask, TaskStatus
+from app.infrastructure.settings import load_settings
 from app.presentation.connection import ConnectionManager
 from app.presentation.dto import (
     CancelOrderRequest,
+    FaultInjectionRequest,
     SubmitIntentRequest,
     SubmitIntentResponse,
 )
@@ -137,7 +139,37 @@ def build_app() -> FastAPI:
                 "lexical_index": c.lexical_index is not None,
                 "lexical_gate": c.lexical_gate,
             },
+            # 评测态故障注入：未启用时是 false。必须上报——开着精排故障跑出来的
+            # 报告，配置行不写这件事的话，读的人只会看到"精排档分数崩了"，
+            # 然后去改检索参数（踩坑 32 的同一条）。
+            "fault_injection": c.faults.describe(),
         }
+
+    # 故障注入端点**按开关注册**：默认关的进程里这条路径根本不存在。
+    # 读的是进程启动时的环境变量，与组装根同一个判据（settings.fault_injection_enabled）。
+    if load_settings().fault_injection_enabled:
+
+        @api.get("/debug/faults")
+        async def get_faults() -> dict:
+            return {"fault_injection": container().faults.describe()}
+
+        @api.post("/debug/faults")
+        async def set_faults(body: FaultInjectionRequest) -> dict:
+            """激活/清空故障注入。空列表 = 清空。
+
+            评测用例逐条设置：31 条用例跑在同一个长驻进程里，只有一两条要故障，
+            做成纯环境变量的话那几条就得单独重启一次服务——等于永远不会被跑到。
+            """
+            c = container()
+            try:
+                if body.components:
+                    c.faults.activate(body.components)
+                else:
+                    c.faults.clear()
+            except (ValueError, RuntimeError) as err:
+                raise HTTPException(status_code=400, detail=str(err)) from err
+            logger.warning("故障注入状态变更：%s", c.faults.active())
+            return {"fault_injection": c.faults.describe()}
 
     @api.post("/commerce/intents", response_model=SubmitIntentResponse)
     async def submit_intent(body: SubmitIntentRequest) -> SubmitIntentResponse:

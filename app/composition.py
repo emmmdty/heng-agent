@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -39,6 +39,7 @@ from app.infrastructure.cache.cached_embedding_client import CachedEmbeddingClie
 from app.infrastructure.cache.redis_cache import RedisCache
 from app.infrastructure.cache.semantic_cache import SemanticCache
 from app.infrastructure.embedding.openai_embedding_client import OpenAIEmbeddingClient
+from app.infrastructure.faults import FaultRegistry, install_fault_injection
 from app.infrastructure.eventbus import TradeEventBus
 from app.infrastructure.persistence.in_memory_repositories import (
     InMemoryOrderRepository,
@@ -111,6 +112,9 @@ class Container:
     prompt_fingerprint: str = ""
     reranker_enabled: bool = False
     lexical_gate: float = 0.0
+    # 评测态故障注入状态。默认是一个 enabled=False 的空注册表，
+    # /health 上报 false——生产进程里这一项永远是 false。
+    faults: FaultRegistry = field(default_factory=FaultRegistry)
 
     async def startup(self) -> None:
         """建表 / 建向量库 / 建知识库。任一失败只告警，对应能力降级但服务可用。"""
@@ -156,6 +160,14 @@ async def build_container() -> Container:
         if cache.enabled
         else raw_embedder
     )
+    # 评测态故障注入（默认关）：给三个检索端口包一层装饰器，让降级链能被端到端检验。
+    # 关掉时原样返回、连装饰器都不构造，生产路径一行不改。
+    # 注意包在 SemanticCache 之前——语义缓存用的是同一个 embedder，
+    # 注入 embedding 故障时它也该一起失效，否则"向量路全挂"只挂了一半。
+    faults, embedder, vector_index, reranker = install_fault_injection(
+        settings, embedder, vector_index, reranker,
+    )
+
     semantic_cache = SemanticCache(
         cache,
         embedder,
@@ -279,4 +291,5 @@ async def build_container() -> Container:
         prompt_fingerprint=_prompt_fingerprint(),
         reranker_enabled=reranker is not None,
         lexical_gate=catalog_search.lexical_gate,
+        faults=faults,
     )

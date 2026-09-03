@@ -25,3 +25,13 @@ class SubmitIntentResponse(BaseModel):
 
 class CancelOrderRequest(BaseModel):
     reason: str = Field(min_length=1, description="取消原因")
+
+
+class FaultInjectionRequest(BaseModel):
+    """评测态故障注入的运行时开关（仅在 FAULT_INJECTION_ENABLED=1 的进程里存在）。
+
+    空列表表示清空——不设单独的"清空"端点，是因为两个端点会让调用方
+    多一次分支判断，而 `components: []` 已经把意图表达清楚了。
+    """
+
+    components: list[str] = []
