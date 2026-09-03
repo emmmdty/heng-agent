@@ -79,7 +79,50 @@ def build_ground_truth() -> str:
     rates = ", ".join(f"1 {cur} = {rate} CNY" for cur, rate in ExchangeRateTable().rates_to_cny.items())
     lines.append("")
     lines.append(f"系统汇率表（到手价工具按此折算目标币种，折算后的价格属于工具返回，不算自行估算）：{rates}")
+    lines.append("")
+    lines.extend(_landed_price_rules())
     return "\n".join(lines)
+
+
+def _landed_price_rules() -> list[str]:
+    """到手价规则表。
+
+    不给这一段的话，judge 手上只有商品价与汇率，对运费/关税/免税额度
+    **只能验自洽、验不了正确**——Agent 自圆其说就能过。实测代价：
+    模型写出"1,199 × 12% ≈ ¥3.48"（计税基数错，最终数字碰巧对），
+    judge 的判词是"与商品库价格及自洽运费/关税一致"。
+
+    与金额出处校验互补：出处校验管"数字有没有来源"，这段管"数字对不对"。
+    """
+    from app.domain.shipping.tariff_schedule import (
+        _BASE_FREIGHT_CNY_MINOR,
+        _DE_MINIMIS_CNY_MINOR,
+        _TARIFF_RATES,
+    )
+
+    lines = ["到手价规则表（工具按此计算；Agent 报的运费/关税/免税额度必须与本表推出的结果一致）：", ""]
+    lines.append("    到手价 = 商品小计 + 运费 + 关税")
+    lines.append("    关税   = **超出免税额度的部分** × 品类费率（小计未超额度则为 0）")
+    lines.append("    运费   = 基础运费 × (1 + 0.6 × (总件数 - 1))，即首件全价 + 每件续件 60%；")
+    lines.append("             多个商品合并一单时按**整批总件数**算一次，不是各单品运费相加")
+    lines.append("")
+    lines.append("| 目的国 | 基础运费(CNY) | 免税额度(CNY) | 品类关税费率 |")
+    lines.append("|---|---|---|---|")
+    for dest in sorted(_TARIFF_RATES):
+        freight = _BASE_FREIGHT_CNY_MINOR[dest] / 100
+        de_minimis = _DE_MINIMIS_CNY_MINOR[dest] / 100
+        # 精度不能丢：US 旅行装备是 7.5%，`:.0%` 会显示成 8%——
+        # judge 拿着 8% 去核对，正确的关税反而会被判错。
+        rates_text = "、".join(
+            f"{cat} {rate * 100:g}%" for cat, rate in _TARIFF_RATES[dest].items()
+        ).replace("*", "其他")
+        lines.append(f"| {dest} | {freight:g} | {de_minimis:g} | {rates_text} |")
+    lines.append("")
+    lines.append(
+        "注：免税额度按**整批小计**判定（不是逐件）；混合品类超额时，"
+        "超出部分按各行金额占比分摊后各按自己的品类费率计征。",
+    )
+    return lines
 
 
 async def call_judge(
@@ -166,6 +209,10 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
     score, p0_all_pass = score_case(judged)
     return {
         "id": case["id"],
+        # 报告要记下这一轮落的是哪份流水：金额出处门禁据此把扫描范围收敛到本轮，
+        # 否则它扫的是累积目录里的全部历史，读数只会越积越高（见
+        # scripts/eval/audit_number_provenance.py 的「扫描范围」）。
+        "session_id": session_id,
         "description": case["description"],
         "score": score,
         "p0_pass": p0_all_pass,
@@ -207,6 +254,9 @@ def render_report(results: list[dict], run_line: str = "") -> str:
     return "\n".join(lines)
 
 
+_TAG_ALL = "full"  # 隐含标签：所有用例都属于它，无需逐条标注
+
+
 async def _guard_semantic_cache(allow: bool) -> dict:
     """语义缓存开着时拒绝跑回归，并把 /health 原样带回去写进报告。
 
@@ -232,25 +282,89 @@ async def _guard_semantic_cache(allow: bool) -> dict:
     return health
 
 
+def select_cases(cases: list[dict], only: str | None = None, tag: str | None = None) -> list[dict]:
+    """按 --only / --tag 挑用例。
+
+    分层的目的是让扩容后的用例集还跑得起：日常 smoke（8-10 条，10 分钟内），
+    发版前 full（全部）。`full` 不需要逐条标注——所有用例隐含属于它，
+    否则新增用例漏标 tag 就会永远不被跑到，而"静默不跑"和真绿外观完全一样。
+
+    选空了一律报错退出：跑 0 条会产出一份"全过"的报告，
+    它和真的全过在报告里长得一模一样。
+    """
+    selected = cases
+    if only is not None:
+        selected = [c for c in selected if c["id"] == only]
+    elif tag is not None and tag != _TAG_ALL:
+        selected = [c for c in selected if tag in (c.get("tags") or [])]
+
+    if not selected:
+        known = sorted({t for c in cases for t in (c.get("tags") or [])} | {_TAG_ALL})
+        raise SystemExit(
+            f"没有用例匹配（--only={only} --tag={tag}）。\n"
+            f"  可用标签：{'、'.join(known)}\n"
+            f"  可用用例：{'、'.join(c['id'] for c in cases)}",
+        )
+    return selected
+
+
+def _guard_stale_service(health: dict, allow: bool) -> None:
+    """服务进程比磁盘上的代码旧时拒绝跑回归。
+
+    九期实测踩过，代价是一轮白跑的定向回归：uvicorn 16:43:06 启动，
+    `tariff_schedule.py` 16:49:20 修完（给 to_dict 加 de_minimis_threshold_major），
+    进程没重启。之后重跑的两条用例打的都是装着旧代码的服务，
+    新字段一次也没出现在工具返回里——而 408 单测全绿（单测读磁盘），
+    /health 报的配置行与新服务一字不差，报告也照样 PASS。
+
+    没有这道拦截，这种轮次唯一的症状是"修了但读数没变"，
+    而交接文档会把人引向"再去查代码里第三条没覆盖的路径"——代码是对的。
+    整轮 13 条 25-40 分钟真金白银，值得在开跑前花这一次 /health 拦下来。
+    """
+    code = health.get("code")
+    if not isinstance(code, dict) or not code.get("stale") or allow:
+        return
+    listed = "、".join(code.get("stale_files") or []) or "若干文件"
+    raise SystemExit(
+        f"拒绝跑回归：被测服务跑的是旧代码。\n"
+        f"  服务启动于 {code.get('started_at')}，"
+        f"但 {listed} 在那之后被改过（最新 {code.get('source_mtime')}）。\n"
+        f"评的会是修复前的行为，而单测和 /health 都不会报警。\n"
+        f"请重启服务后重试：\n"
+        f"  uv run uvicorn app.presentation.server:app --port 8000\n"
+        f"确认要带旧代码跑则加 --allow-stale-service。",
+    )
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", default=str(PROJECT_ROOT / "eval" / "cases.yaml"))
     parser.add_argument("--only", default=None, help="只跑指定 case id")
     parser.add_argument(
+        "--tag",
+        default=None,
+        help=f"只跑带该标签的用例（smoke 为日常档；{_TAG_ALL} 或不传为全部）",
+    )
+    parser.add_argument(
         "--allow-semantic-cache",
         action="store_true",
         help="允许在语义缓存开启的环境下跑（不推荐，评的会是缓存而不是 Agent）",
     )
+    parser.add_argument(
+        "--allow-stale-service",
+        action="store_true",
+        help="允许在服务代码比磁盘旧的情况下跑（不推荐，评的会是修复前的行为）",
+    )
     args = parser.parse_args()
 
     health = await _guard_semantic_cache(args.allow_semantic_cache)
+    _guard_stale_service(health, args.allow_stale_service)
     run_line = describe_run(health, os.environ.get("EVAL_JUDGE_MODEL", ""))
     print(f"跑测配置：{run_line}\n", flush=True)
 
     with open(args.cases, encoding="utf-8") as f:
         cases = yaml.safe_load(f)["cases"]
-    if args.only:
-        cases = [c for c in cases if c["id"] == args.only]
+    cases = select_cases(cases, only=args.only, tag=args.tag)
 
     results = []
     ground_truth = build_ground_truth()
@@ -264,7 +378,8 @@ async def main() -> None:
                 # 跑完才知道原因，而每一条都真金白银烧了网关配额。
                 print(f"   [异常] {type(err).__name__}: {str(err)[:400]}", flush=True)
                 result = {
-                    "id": case["id"], "description": case["description"],
+                    "id": case["id"], "session_id": None,
+                    "description": case["description"],
                     "score": 0.0, "p0_pass": False, "verdict": "ERROR",
                     "judged": {}, "transcript": f"执行异常：{type(err).__name__}: {err}",
                 }

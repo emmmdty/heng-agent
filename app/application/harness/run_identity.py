@@ -13,12 +13,60 @@
 脚本本来就为了拦语义缓存要读一次 /health，顺路留下整份配置，零额外成本。
 
 缺字段一律写"未知"而不是省略：少一行会被读成"这项没启用"，比"未知"更误导。
+
+**代码新鲜度（九期加）**：上面这些字段都答不了"这个服务跑的是不是我刚改的代码"。
+九期实测踩到：uvicorn 16:43:06 起，修复 16:49:20 落地，进程再没重启，
+之后两条定向回归打的都是装着旧代码的服务，而 /health 报的配置行一字不差、
+408 单测也全绿（单测读磁盘、评测打进程，两者可以同时成立）。
+判据取 **源码 mtime vs 进程启动时刻**而不是 git sha：sha 看不见未提交的改动，
+而踩坑当时正是未提交状态。
 """
 from __future__ import annotations
 
+import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 _UNKNOWN = "未知"
+
+# 模块在服务启动早期被导入，用导入时刻近似进程启动时刻。
+# 晚于这一刻的源码改动，进程内存里一定没有。
+_PROCESS_START = time.time()
+_SOURCE_ROOT = Path(__file__).resolve().parents[2]  # 仓库里的 app/
+_MAX_LISTED = 5
+
+
+def _stamp(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch).strftime("%m-%d %H:%M:%S")
+
+
+def code_identity(root: Path | None = None, started_at: float | None = None) -> dict:
+    """比对源码 mtime 与进程启动时刻，报出这个进程跑的代码是不是最新的。
+
+    `__pycache__` 要排除：它在进程跑起来之后才写入是常态，据此判过期会天天误报。
+    """
+    root = Path(root) if root is not None else _SOURCE_ROOT
+    started_at = _PROCESS_START if started_at is None else started_at
+
+    newest = 0.0
+    stale_files: list[str] = []
+    for path in root.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        mtime = path.stat().st_mtime
+        newest = max(newest, mtime)
+        if mtime > started_at:
+            stale_files.append(str(path.relative_to(root)))
+
+    stale_files.sort()
+    return {
+        "started_at": _stamp(started_at),
+        "source_mtime": _stamp(newest) if newest else _UNKNOWN,
+        "stale": bool(stale_files),
+        "stale_files": stale_files[:_MAX_LISTED],
+        "stale_count": len(stale_files),
+    }
 
 
 def _text(value: Any) -> str:
@@ -44,4 +92,21 @@ def describe_run(health: dict, judge_model: str = "") -> str:
         f"｜字面索引 {_switch(retrieval.get('lexical_index'))}"
         f"｜字面门限 {_text(retrieval.get('lexical_gate'))}"
         f"｜语义缓存 {_switch(health.get('semantic_cache'))}"
+        f"｜代码 {_describe_code(health.get('code'))}"
+    )
+
+
+def _describe_code(code: Any) -> str:
+    """代码新鲜度渲进同一行——报告开头是"分数变了先看它"的地方，过期要在这刺眼。"""
+    if not isinstance(code, dict) or not code:
+        return _UNKNOWN
+    started = _text(code.get("started_at"))
+    if not code.get("stale"):
+        return f"新鲜(服务启动于 {started})"
+    listed = "、".join(code.get("stale_files") or []) or "若干文件"
+    count = code.get("stale_count") or len(code.get("stale_files") or [])
+    more = f" 等 {count} 个" if count > len(code.get("stale_files") or []) else ""
+    return (
+        f"⚠️已过期(服务启动于 {started}，但 {listed}{more} 在那之后被改过"
+        f"，最新 {_text(code.get('source_mtime'))})"
     )

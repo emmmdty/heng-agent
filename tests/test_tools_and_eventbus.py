@@ -128,3 +128,115 @@ class TestToolsDirectInvoke:
             assert bad.content[0].text.startswith("[error]")
         finally:
             ShoppingContext.reset(token)
+
+
+class TestQuoteBasketDestinationErrors:
+    """组合报价的目的国错误必须能让模型自纠。
+
+    九期评测挖出的同一条缝（另一头在 catalog_search）：模型把买家说的"欧盟"
+    翻成 DE/FR，工具报的是"P1002（TrailOx 20寸登机行李箱）不可寄往 DE"——
+    这句话把锅甩给了商品，模型据此得出"这些箱子不发欧盟"，
+    而真相是**规则表根本没有 DE 这个目的国**。
+
+    校验顺序决定了错误信息的对错：规则表支持性要先于商品可达性判断，
+    否则那句带支持列表的错误（`TariffSchedule.quote_basket` 里本来就有）
+    永远被挡在后面，模型看不到它。
+    """
+
+    def _tool(self):
+        from app.application.tools.quote_basket_tool import build_quote_basket_tool
+        from app.domain.catalog.exchange_rate import ExchangeRateTable
+        from app.domain.shipping.tariff_schedule import TariffSchedule
+
+        return build_quote_basket_tool(
+            InMemoryProductRepository(),
+            TariffSchedule(rates=ExchangeRateTable()),
+            TradeEventBus(),
+        )
+
+    async def _call(self, tool, **kwargs):
+        token = ShoppingContext.set(ShoppingContextSnapshot(
+            shopping_session_id="s-quote", buyer_id="b1", locale="zh-CN", currency="CNY",
+        ))
+        try:
+            return await tool(**kwargs)
+        finally:
+            ShoppingContext.reset(token)
+
+    async def test_unsupported_destination_names_the_supported_ones(self):
+        chunk = await self._call(
+            self._tool(),
+            items=[{"product_id": "P1002", "quantity": 1}],
+            ship_to="DE",
+        )
+        text = chunk.content[0].text
+        assert "DE" in text
+        assert "EU" in text, "必须给出支持列表，模型才知道该改填什么"
+
+    async def test_does_not_blame_the_product(self):
+        """最要命的是把"规则表没有 DE"说成"这件商品不发 DE"——
+        模型没有任何办法识破这句话，只能照着它给买家一个错误结论。"""
+        chunk = await self._call(
+            self._tool(),
+            items=[{"product_id": "P1002", "quantity": 1}],
+            ship_to="DE",
+        )
+        assert "不可寄往" not in chunk.content[0].text
+
+    async def test_genuinely_unshippable_product_still_says_so(self):
+        """回归：目的国规则表支持、而商品确实不发那儿时，照旧点名商品。
+
+        GlideCase（P1016）的 ships_to 只有 CN，寄美国属于这种情况。
+        """
+        chunk = await self._call(
+            self._tool(),
+            items=[{"product_id": "P1016", "quantity": 1}],
+            ship_to="US",
+        )
+        text = chunk.content[0].text
+        assert "P1016" in text and "不可寄往" in text
+
+    async def test_supported_destination_still_quotes(self):
+        chunk = await self._call(
+            self._tool(),
+            items=[{"product_id": "P1002", "quantity": 1}],
+            ship_to="EU",
+        )
+        payload = json.loads(chunk.content[0].text)
+        assert payload["landed_total_major"] == 974.0
+
+
+class TestToolDocsMatchTheRuleTable:
+    """工具描述里写死的目的国枚举，必须和规则表一致。
+
+    AgentScope 从 docstring 生成 JSON schema，取值只能写死在文字里、
+    没法从 `_TARIFF_RATES` 动态生成——那就必然有脱钩的一天：
+    规则表加了新目的国，工具描述还是老五个，模型永远不会去用新的。
+
+    这类"忘了同步"的故障外观和"故意不支持"完全一样，没有任何告警
+    （七期 BM25 忘接线是同一类）。所以用一条测试把两边钉在一起。
+    """
+
+    def _supported(self):
+        from app.domain.catalog.exchange_rate import ExchangeRateTable
+        from app.domain.shipping.tariff_schedule import TariffSchedule
+
+        return TariffSchedule(rates=ExchangeRateTable()).supported_destinations()
+
+    def test_product_search_tool_lists_every_supported_destination(self):
+        import inspect
+
+        from app.application.tools import product_search_tool as module
+
+        source = inspect.getsource(module)
+        for code in self._supported():
+            assert f'"{code}"' in source, f"工具描述里没提到规则表支持的 {code}"
+
+    def test_quote_basket_tool_lists_every_supported_destination(self):
+        import inspect
+
+        from app.application.tools import quote_basket_tool as module
+
+        source = inspect.getsource(module)
+        for code in self._supported():
+            assert f'"{code}"' in source, f"工具描述里没提到规则表支持的 {code}"

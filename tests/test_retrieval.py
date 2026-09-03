@@ -131,10 +131,16 @@ class TestTwoStageRecall:
         assert rejected["P1002"]["price_major"] > 500.0
 
     async def test_unshippable_candidate_reported_in_filtered_out(self, indexed):
+        """商品自身不发这个目的国 → filtered_out 里如实标注。
+
+        例子用 JP：规则表支持它，而 LumenGo 系列的 ships_to 是 CN/US/EU。
+        （原先这条用的是 BR——那是**规则表根本不支持**的目的国，属于下面
+        TestUnsupportedDestination 的情形，两者混用会把真正的缺陷藏住。）
+        """
         repo, embedder, index = indexed
         usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
         result = await usecase.execute(
-            ProductSearchSpec(normalized_query="露营灯 抗造", ship_to="BR"),
+            ProductSearchSpec(normalized_query="露营灯 抗造", ship_to="JP"),
         )
         reasons = {item["reason"] for item in result["filtered_out"]}
         assert reasons == {"ship_to_unavailable"}, "不可达目的国应标注为 ship_to_unavailable"
@@ -207,3 +213,75 @@ class TestTwoStageRecall:
         for field in ("product_id", "title", "brand", "price_major", "currency", "skus"):
             assert field in card, f"商品卡缺字段 {field}，前端渲染会残"
         assert card["landed_price"]["currency"] == "USD", "传了 ship_to 就必须内联到手价"
+
+
+class TestUnsupportedDestination:
+    """规则表不认识的目的国，必须和"这件商品不发那儿"区分开。
+
+    九期评测实测挖出：买家问"寄到欧盟"，Agent 合理地把它翻成具体国家码
+    试了 DE 和 FR（工具参数当时写的是"收货国家二位码，如 CN、US"，
+    正是这么诱导的）。规则表只认 CN/US/EU/JP/SG，于是**每一个商品**都被
+    逐个标成 `ship_to_unavailable`，Agent 看到的是"所有 TrailOx 都不发欧盟"，
+    只好放弃到手价、转而凭自己的知识说"欧盟免税额度约 €150"——
+    正是八期补 `de_minimis_threshold_major` 要防的行为，从另一条路径又回来了。
+
+    两处都要修：
+      1. 语义分清。系统不认识 DE，不代表商品不发德国——据此过滤商品是错的判断。
+      2. 返回要能自纠。错误里必须带上支持的目的国，否则模型无从知道该改填什么，
+         只能凭知识硬答。这与 `combine_hint` 是同一条原则：**工具返回值要能自证边界**。
+    """
+
+    async def test_unsupported_destination_is_named_at_top_level(self, indexed):
+        repo, embedder, index = indexed
+        usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
+        result = await usecase.execute(
+            ProductSearchSpec(normalized_query="行李箱 铝框", ship_to="DE"),
+        )
+        assert "ship_to_unsupported" in result, "规则表不支持的目的国必须在顶层说明"
+        assert result["ship_to_unsupported"]["given"] == "DE"
+
+    async def test_supported_list_is_returned_so_the_model_can_retry(self, indexed):
+        """不给支持列表，模型就只能猜——实测它猜了 DE 又猜 FR，然后放弃。"""
+        repo, embedder, index = indexed
+        usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
+        result = await usecase.execute(
+            ProductSearchSpec(normalized_query="行李箱 铝框", ship_to="DE"),
+        )
+        supported = result["ship_to_unsupported"]["supported"]
+        assert "EU" in supported, "买家说的欧盟对应 EU，必须能从返回里看出来"
+        assert "DE" not in supported
+
+    async def test_products_are_not_mislabeled_as_unshippable(self, indexed):
+        """这是最要命的一条：把"系统不认识这个目的国"表述成"这些商品都不发那儿"，
+        是一句**事实错误**，而且模型完全没有办法识破它。"""
+        repo, embedder, index = indexed
+        usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
+        result = await usecase.execute(
+            ProductSearchSpec(normalized_query="行李箱 铝框", ship_to="DE"),
+        )
+        reasons = {item["reason"] for item in result.get("filtered_out", [])}
+        assert "ship_to_unavailable" not in reasons
+        assert result["hits"], "商品本身照常返回——买家问的商品信息不该因为目的国填错而消失"
+
+    async def test_no_landed_price_is_fabricated_for_unsupported_destination(self, indexed):
+        """拿不到规则就不能给到手价，一个数字都不能有。"""
+        repo, embedder, index = indexed
+        usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
+        result = await usecase.execute(
+            ProductSearchSpec(normalized_query="行李箱 铝框", ship_to="DE"),
+        )
+        assert result["hits"], "哨兵：没有商品卡的话，下面的断言会平凡通过（踩坑 29）"
+        for hit in result["hits"]:
+            assert hit.get("landed_price") is None, "目的国不支持时不得内联到手价"
+            for sku in hit.get("skus", []):
+                assert sku.get("landed_price") is None
+
+    async def test_supported_destination_is_untouched(self, indexed):
+        """回归：支持的目的国照旧过滤 + 内联到手价，行为一点不变。"""
+        repo, embedder, index = indexed
+        usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
+        result = await usecase.execute(
+            ProductSearchSpec(normalized_query="行李箱 铝框", ship_to="EU"),
+        )
+        assert "ship_to_unsupported" not in result
+        assert result["hits"][0]["landed_price"]["landed_total_major"] > 0

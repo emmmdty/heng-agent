@@ -39,7 +39,10 @@ def build_product_search_tool(usecase: CatalogSearchUseCase, bus: TradeEventBus)
             category (`str | None`):
                 品类槽位，可选，如"旅行装备"、"数码配件"。
             ship_to (`str | None`):
-                收货国家二位码，可选，如 "CN"、"US"；传入后过滤不可送达商品并内联到手价。
+                目的国代码，可选，**只能取** "CN" / "US" / "EU" / "JP" / "SG"
+                （EU 是整个欧盟，不要填 DE、FR 这类成员国代码）；
+                传入后过滤不可送达商品并内联到手价。
+                填了规则表以外的值时，返回里会带 ship_to_unsupported 说明支持哪些。
             top_k (`int`):
                 返回候选数量，默认 5。
             price_max_major (`float | None`):

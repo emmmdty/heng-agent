@@ -59,6 +59,9 @@ class BrandResolution:
     ambiguous: bool
     winner: Optional[str]        # 被 query 唯一收敛到的 product_id
     scores: dict[str, int]
+    # query 显式点名了**全部**候选：这是有意的对比（"20寸和24寸分别多少钱"），
+    # 不是歧义。此时没有唯一赢家，winner 为 None 而 ambiguous 为 False。
+    explicit_all: bool = False
 
 
 def _discriminators(title: str) -> set[str]:
@@ -93,11 +96,32 @@ def resolve_brand(query: str, candidates: list[Candidate]) -> BrandResolution:
         product_id: sum(1 for token in tokens - shared if token in lowered)
         for product_id, tokens in per_candidate.items()
     }
+    if all(score > 0 for score in scores.values()):
+        # 每个候选都命中了自己的独有辨识词 → query 把它们逐一点名了。
+        # 这是对比，不是歧义："Agent 选了另一个变体却被判 FAIL"在这里不可能发生，
+        # 因为判据本来就要求全部出现。边界卡在"全部"：只点名一部分时
+        # （下面的分支）剩下那些仍可能被合理选中，仍算歧义。
+        return BrandResolution(False, None, scores, explicit_all=True)
+
     best = max(scores.values())
     winners = [pid for pid, score in scores.items() if score == best]
     if best == 0 or len(winners) > 1:
         return BrandResolution(True, None, scores)
     return BrandResolution(False, winners[0], scores)
+
+
+def missing_pins(matched_ids: set[str], pinned: set[str]) -> set[str]:
+    """显式对比时，rubric 漏钉了哪些被点名的变体。
+
+    只钉一个的话，Agent 老实答了两个、判据却只检验一个，另一个答错照样 PASS——
+    "能被跳过的判据等于没有判据"的另一种形态。
+
+    整条 rubric 一个 product_id 都不钉是合法写法（判据可以用价格数字写死），
+    所以只在 rubric 已经钉了这组候选中至少一个时才追究漏网的。
+    """
+    if not (pinned & matched_ids):
+        return set()
+    return matched_ids - pinned
 
 
 async def main() -> int:
@@ -106,6 +130,7 @@ async def main() -> int:
 
     problems: list[tuple[str, str, list[Candidate], set, BrandResolution]] = []
     mismatches: list[tuple[str, str, str, set]] = []
+    partial_pins: list[tuple[str, str, list[str], list[str]]] = []
     for case in cases:
         query_text = " ".join(case["queries"])
         rubric_text = yaml.safe_dump(case.get("rubric", {}), allow_unicode=True)
@@ -119,15 +144,20 @@ async def main() -> int:
             if len(matched) <= 1:
                 continue
             resolution = resolve_brand(query_text, matched)
-            if resolution.ambiguous:
+            if resolution.explicit_all:
+                gap = missing_pins({c.product_id for c in matched}, pinned)
+                if gap:
+                    partial_pins.append((case["id"], brand, sorted(gap), sorted(pinned)))
+            elif resolution.ambiguous:
                 problems.append((case["id"], brand, matched, pinned, resolution))
             elif pinned and resolution.winner not in pinned and pinned & {c.product_id for c in matched}:
                 # query 收敛到了 A，rubric 却钉着同品牌的 B —— 两边打架，必然误判
                 mismatches.append((case["id"], brand, resolution.winner, pinned))
 
     print(f"{_CASES}：{len(cases)} 条用例，商品库 {len(products)} 个 SPU\n")
-    if not problems and not mismatches:
-        print("用例自检通过：每个品牌指代都能由 query 收敛到唯一商品")
+    if not problems and not mismatches and not partial_pins:
+        print("用例自检通过：每个品牌指代都能由 query 收敛到唯一商品，"
+              "或被显式点名做对比且 rubric 已逐一钉住")
         return 0
 
     for case_id, brand, matched, pinned, resolution in problems:
@@ -142,6 +172,11 @@ async def main() -> int:
 
     for case_id, brand, winner, pinned in mismatches:
         print(f"[{case_id}] \"{brand}\"：query 指向 {winner}，rubric 却钉着 {sorted(pinned)}——两边打架\n")
+
+    for case_id, brand, gap, pinned in partial_pins:
+        print(f"[{case_id}] \"{brand}\"：query 点名了多个变体做对比，"
+              f"但 rubric 只钉了 {pinned}，漏了 {gap}——"
+              f"漏掉的那个答错也会照样 PASS\n")
 
     print("修法建议：在 query 里补足消歧信息（如带上品类词或型号），"
           "而不是放宽 rubric——放宽会让用例失去检验能力。")

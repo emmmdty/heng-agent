@@ -147,22 +147,41 @@ uv run python -m app.worker
 
 ## 验证
 
+提交前跑门禁，四项全部零 LLM 成本、十几秒：
+
 ```bash
-uv run pytest                          # 408 个单测：domain / 召回降级与过滤回传 / 计价规则 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真
+make check          # = pytest + 标注集自检 + 用例自检 + 金额出处门禁
+```
+
+单项与带成本的验证：
+
+```bash
+uv run pytest                          # 462 个单测：domain / 召回降级与过滤回传 / 计价规则 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
-uv run python scripts/eval_regression.py   # 评测回归：13 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
+make eval-smoke                            # 评测回归日常档：10 条 case（--tag smoke）
+make eval                                  # 评测回归全量：28 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
 uv run python scripts/eval/run_product_recall.py --compare-strategies   # 六档召回对比
 uv run python scripts/eval/run_product_recall.py --sweep-lexical-gate 0,4,8 --sweep-base hybrid_rerank  # 门限标定
 uv run python scripts/eval/validate_datasets.py       # 召回标注集自检（105 商品 + 22 品类）
 uv run python scripts/eval/audit_cases.py             # Rubric 用例自检：商品指代是否唯一
-uv run python scripts/eval/audit_number_provenance.py # 金额出处扫描：回复里的金额有没有工具出处
+uv run python scripts/eval/audit_number_provenance.py --report latest  # 金额出处扫描：回复里的金额有没有工具出处（--report 把范围收敛到最近一轮）
 uv run python scripts/eval/collect_bad_cases.py       # Bad-case 采集：失败自动进标注池（--list / --promote）
 uv run python scripts/verify_fallback.py              # 模型回退链真实验证（主模型不可达→回退真实备用模型）
 ```
 
 评测 case 支持 `prior_context` 字段：把跨会话已成立的事实（如上一 case 写入的长期偏好）告知 judge，
 否则 judge 只看本会话记录，会把"正确应用历史偏好"误判为"无据添加"。
+
+用例分 `smoke` / `full` 两档（`tags` 字段，`--tag` 选择）：全量一轮 60-90 分钟，
+没有日常档的结果不是"跑得更全"，是"日常根本不跑"。所有用例都隐含属于 `full`，
+漏标 tag 不会导致某条用例静默不被跑到。
+
+**报告开头自带一行跑测配置**（被测模型 / 评审模型 / 提示词版本 / 精排与门限 / 语义缓存 / 代码新鲜度），
+由被测服务 `GET /health` 自报、脚本原样抄录。分数变了先看这一行，再去改 Agent。
+其中"代码新鲜度"比对源码 mtime 与服务进程启动时刻——服务跑着旧代码时，
+单测（读磁盘）和 `/health` 的其余字段都不会报警，而评测评的是修复前的行为；
+`eval_regression.py` 在开跑前就会拦下这种情况（`--allow-stale-service` 是逃生阀）。
 
 ## 金额出处校验（数字必须来自工具）
 
@@ -194,6 +213,11 @@ judge 判 PASS，因为每个加数都对；错的是"组合运费按一次履�
 **范围是刻意收窄的**，方向一律取"宁可漏报不误报"：只统计带货币标记的数字
 （`¥ $ 元 USD ...`），表格里裸写的 `| 65 |` 会漏掉，所以这个率是**下界**；
 百分数不算金额；出处只比数值不比币种；出处按会话累积（引用上一轮检索结果是正常行为）。
+
+**当门禁用时必须加 `--report latest`**：`data/conversations/` 是累积目录，
+扫全量会把历史流水一直算进分子分母，读数只增不减，阈值只能跟着调、门禁很快作废。
+另有 `--min-amounts`（默认 30）：金额总数太少时不判定而不是放宽阈值——
+单条用例只有十几处金额，1 处无出处 5.9%、2 处 11.8%，用比率下结论等于抛硬币。
 
 配套修掉了两个让这条判据失真的根因（`tests/test_trace_fidelity.py` 钉住）：
 

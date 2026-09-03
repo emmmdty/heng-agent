@@ -47,7 +47,9 @@ def build_quote_basket_tool(
                 商品清单，每项形如 {"product_id": "P1004", "quantity": 1}；
                 quantity 缺省为 1。
             ship_to (`str`):
-                收货国家二位码，如 "US"、"CN"。
+                目的国代码，**只能取** "CN" / "US" / "EU" / "JP" / "SG"
+                （EU 是整个欧盟，不要填 DE、FR 这类成员国代码）。
+                取值以工具报错时返回的支持列表为准。
             target_currency (`str`):
                 金额口径币种，默认 "CNY"。
         """
@@ -58,6 +60,20 @@ def build_quote_basket_tool(
         try:
             if not items:
                 raise ValueError("items 不能为空")
+
+            # 规则表支持性要**先于**商品可达性判断。顺序反了的话，
+            # 传 DE 会先撞上"P1002（TrailOx 20寸登机行李箱）不可寄往 DE"——
+            # 这句话把锅甩给商品，模型据此告诉买家"这些箱子不发欧盟"，
+            # 而真相是规则表根本没有 DE 这个目的国。带支持列表的那句错误
+            # （quote_basket 里本来就有）于是永远被挡在后面，模型看不到、无从自纠。
+            if ship_to not in tariff.supported_destinations():
+                raise ValueError(
+                    f"计价规则表不支持目的国 {ship_to}"
+                    f"（支持 {tariff.supported_destinations()}）。"
+                    f"若买家说的是欧盟/日本/新加坡等，请改用括号里的代码重试；"
+                    f"确实不在支持范围内时，如实告知买家无法计算到手价，"
+                    f"不要自行估算运费或关税。",
+                )
 
             lines = []
             for raw in items:

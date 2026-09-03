@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.application.agents.orchestrator import SubmitIntentInput
+from app.application.harness.run_identity import code_identity
 from app.composition import Container, build_container
 from app.domain.queue.ports.task_queue import IntentTask, TaskStatus
 from app.presentation.connection import ConnectionManager
@@ -127,6 +128,10 @@ def build_app() -> FastAPI:
             "queue_depth": await c.task_queue.depth() if c.task_queue is not None else 0,
             # 跑测身份：评测脚本原样抄进报告，让"分数变了"能归因到配置而不是靠回忆
             "prompt_fingerprint": c.prompt_fingerprint,
+            # 代码新鲜度：上面那些字段答不了"这进程跑的是不是我刚改的代码"。
+            # 九期踩过——进程 16:43 起、修复 16:49 落地、没重启，两条定向回归
+            # 全打在旧代码上，而这份 /health 报的配置一字不差。
+            "code": code_identity(),
             "retrieval": {
                 "reranker": c.reranker_enabled,
                 "lexical_index": c.lexical_index is not None,

@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 from app.domain.catalog.exchange_rate import ExchangeRateTable
@@ -230,6 +230,17 @@ class CatalogSearchUseCase:
             scored = await self._keyword_recall(spec)
             recall_strategy = "keyword_2gram"
 
+        # 规则表不认识的目的国（买家说"欧盟"，模型填了 DE/FR）：**不能据此过滤商品**。
+        # 系统没有德国的计价规则，不代表这些箱子不发德国——按 ships_to 逐个标
+        # ship_to_unavailable 会给出一句事实错误的结论（"所有 TrailOx 都不发欧盟"），
+        # 而模型没有任何办法识破它，只能放弃到手价、凭自己的知识硬答免税额度。
+        # 正确做法是把这个目的国当作没传（照常返回商品、不内联到手价），
+        # 并在顶层如实说明 + 给出支持列表，让模型能自己改填重试。
+        unsupported_ship_to: Optional[str] = None
+        if spec.ship_to and spec.ship_to not in self._tariff.supported_destinations():
+            unsupported_ship_to = spec.ship_to
+            spec = replace(spec, ship_to=None)
+
         # ship_to / 价格硬约束过滤 + top_k 截断（硬约束走结构化过滤，不交给模型）
         filtered: list[tuple[float, Product]] = []
         filtered_out: list[dict] = []
@@ -251,6 +262,20 @@ class CatalogSearchUseCase:
             # 如实告知"召回到了但被硬约束挡掉"，否则模型分不清"库里没有"与"被过滤"，
             # 会把超预算商品答成"没有这个商品"
             result["filtered_out"] = filtered_out
+        if unsupported_ship_to is not None:
+            # 支持列表必须一起回：只说"不支持"，模型无从知道该改填什么，
+            # 实测它会接着猜（DE 猜完猜 FR），猜不中就凭自身知识作答。
+            # 同 combine_hint 的原则——工具返回值要能自证边界。
+            result["ship_to_unsupported"] = {
+                "given": unsupported_ship_to,
+                "supported": self._tariff.supported_destinations(),
+                "note": (
+                    f"计价规则表不支持目的国 {unsupported_ship_to}，本次未按目的国过滤、"
+                    f"也未计算到手价（商品信息本身照常返回）。"
+                    f"若买家说的是欧盟/日本/新加坡等，请改用 supported 里的代码重试；"
+                    f"确实不在支持范围内时，如实告知买家无法计算到手价，不要自行估算运费或关税。"
+                ),
+            }
         return result
 
     def _reject_reason(self, product: Product, spec: ProductSearchSpec) -> Optional[str]:
