@@ -124,6 +124,21 @@ def missing_pins(matched_ids: set[str], pinned: set[str]) -> set[str]:
     return matched_ids - pinned
 
 
+def _dangling_requires(cases: list[dict]) -> list[tuple[str, list[str]]]:
+    """`requires` 必须指向真实存在的用例 id。
+
+    拼错一个 id 的后果是续跑时前置补不回来——而那是几十分钟之后、
+    且分数看上去完全正常的时候才暴露的。静态查出来成本是零。
+    """
+    known = {case["id"] for case in cases}
+    found = []
+    for case in cases:
+        missing = [req for req in (case.get("requires") or []) if req not in known]
+        if missing:
+            found.append((case["id"], sorted(missing)))
+    return found
+
+
 def _unknown_fault_components(cases: list[dict]) -> list[tuple[str, list[str], list[str]]]:
     """用例声明的故障组件必须是服务认得的名字。
 
@@ -171,9 +186,10 @@ async def main() -> int:
                 mismatches.append((case["id"], brand, resolution.winner, pinned))
 
     bad_faults = _unknown_fault_components(cases)
+    dangling = _dangling_requires(cases)
 
     print(f"{_CASES}：{len(cases)} 条用例，商品库 {len(products)} 个 SPU\n")
-    if not problems and not mismatches and not partial_pins and not bad_faults:
+    if not problems and not mismatches and not partial_pins and not bad_faults and not dangling:
         print("用例自检通过：每个品牌指代都能由 query 收敛到唯一商品，"
               "或被显式点名做对比且 rubric 已逐一钉住")
         return 0
@@ -200,6 +216,10 @@ async def main() -> int:
         print(f"[{case_id}] 声明了未知的故障组件 {unknown}，可选：{supported}——"
               f"拼错的组件名会让服务端 400，整条用例判 ERROR，"
               f"而这要等到跑测时才发现（一轮 60-90 分钟）\n")
+
+    for case_id, missing in dangling:
+        print(f"[{case_id}] requires 指向了不存在的用例 {missing}——"
+              f"续跑时前置补不回来，而那是几十分钟后、分数看上去还很正常的时候才暴露\n")
 
     print("修法建议：在 query 里补足消歧信息（如带上品类词或型号），"
           "而不是放宽 rubric——放宽会让用例失去检验能力。")

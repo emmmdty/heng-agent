@@ -108,6 +108,10 @@ cases:
     description: 长期偏好跨会话生效（依赖 memory-write 先执行）
     tags: [smoke]
     buyer_id: eval-memory-buyer
+    # 依赖关系从注释升级成字段：续跑（--resume）时若 memory-write 已完成而本条没跑完，
+    # 前置会被自动重跑。跳过前置直接跑本条，评的是一个不成立的前提，
+    # 而分数看上去完全正常——纪律写在注释里，判据实现不了它。
+    requires: [memory-write]
     # judge 只能看到本会话 transcript，必须告知它偏好是上一个 case 跨会话写入的真实事实
     prior_context: |
       该买家（eval-memory-buyer）已在早先的另一个会话里通过记忆能力写入长期偏好：

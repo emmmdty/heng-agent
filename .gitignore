@@ -6,6 +6,8 @@ __pycache__/
 data/
 eval/report-*.md
 eval/report-*.json
+# 整轮跑测过程中的增量落盘（正常结束会自动删掉，中断时留下来供 --resume）
+eval/partial-*.json
 # 召回评测报告同样是每次跑测的产物，不入库；标注集（eval/*.jsonl）要入库
 eval/recall-report-*.md
 eval/category-recall-report-*.md

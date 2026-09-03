@@ -41,7 +41,9 @@ from app.infrastructure.settings import load_settings  # noqa: E402,F401
 from app.application.harness.run_identity import describe_run  # noqa: E402
 from app.infrastructure.transient import is_transient_error  # noqa: E402
 
-BASE_URL = "http://127.0.0.1:8000"
+# 被测服务地址。默认 8000；`EVAL_BASE_URL` 可指到别的端口——
+# 起第二个实例做 --dry-run 体检（或服务本来就不在 8000）时需要它。
+BASE_URL = os.environ.get("EVAL_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # judge 不经模型层闸门（直连 httpx），自己退避重试，避免主模型限流时整轮评测报废
@@ -195,6 +197,65 @@ def score_case(judged: dict) -> tuple[float, bool]:
     p0_ratio, p1_ratio, p2_ratio = ratio(judged.get("p0", [])), ratio(judged.get("p1", [])), ratio(judged.get("p2", []))
     weighted = 0.5 * p0_ratio + 0.35 * p1_ratio + 0.15 * p2_ratio
     return round(weighted, 3), p0_ratio == 1.0
+
+
+def partial_path(stamp: str) -> Path:
+    return PROJECT_ROOT / "eval" / f"partial-{stamp}.json"
+
+
+def write_partial(path: Path, run_line: str, results: list[dict]) -> None:
+    """每条用例跑完就把**当前全部结果**重写一遍。
+
+    为什么不是"异常时才保存"：中断最常见的形态是 Ctrl-C 和进程被杀，
+    那两种情况下没有机会执行保存逻辑。唯一可靠的做法是每条跑完就写。
+    为什么是全量覆盖而不是 append：JSON 数组 append 要么写坏格式、
+    要么得自己维护括号；而整份重写的代价相对一条用例 2-3 分钟的模型调用可以忽略。
+    """
+    path.write_text(
+        json.dumps({"run_line": run_line, "results": results}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_partial(path: Path) -> dict:
+    if not path.exists():
+        raise SystemExit(f"续跑文件不存在：{path}（eval/partial-*.json 是整轮跑测过程中落的）")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def plan_resume(cases: list[dict], completed: set[str]) -> tuple[list[dict], list[str]]:
+    """续跑要跑哪些用例。
+
+    跳过已完成的，但**待跑用例声明的前置若也在已完成列表里，要一并重跑**：
+    `memory-recall` 依赖 `memory-write` 先把偏好写进去，跳过前置直接跑后继，
+    评的是一个不成立的前提，而分数看上去完全正常——这类错误没有任何东西会报警。
+
+    返回的顺序与 cases.yaml 一致：用例之间的依赖靠顺序执行保证。
+    """
+    pending = [case for case in cases if case["id"] not in completed]
+    prerequisites = {
+        req
+        for case in pending
+        for req in (case.get("requires") or [])
+        if req in completed
+    }
+    run_ids = {case["id"] for case in pending} | prerequisites
+    todo = [case for case in cases if case["id"] in run_ids]
+    skipped = [case["id"] for case in cases if case["id"] not in run_ids]
+    return todo, skipped
+
+
+def merge_results(
+    cases: list[dict], previous: list[dict], fresh: list[dict],
+) -> list[dict]:
+    """重跑过的取新结果、没跑的沿用旧结果，并按用例顺序排好。
+
+    只保留**本轮选中**的用例：用 --tag 缩小范围后续跑时，
+    旧 partial 里多出来的用例不能混进报告，否则总览的分母是错的。
+    """
+    by_id = {result["id"]: result for result in previous}
+    by_id.update({result["id"]: result for result in fresh})
+    return [by_id[case["id"]] for case in cases if case["id"] in by_id]
 
 
 def declared_fault_components(cases: list[dict]) -> set[str]:
@@ -426,6 +487,17 @@ async def main() -> None:
         action="store_true",
         help="允许在服务代码比磁盘旧的情况下跑（不推荐，评的会是修复前的行为）",
     )
+    parser.add_argument(
+        "--resume",
+        default=None,
+        metavar="PARTIAL_JSON",
+        help="从 eval/partial-*.json 续跑：跳过已完成的用例，前置（requires）自动补回",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只跑前置检查并打印本轮将跑哪些用例，一次模型调用都不发",
+    )
     args = parser.parse_args()
 
     health = await _guard_semantic_cache(args.allow_semantic_cache)
@@ -438,10 +510,39 @@ async def main() -> None:
     cases = select_cases(cases, only=args.only, tag=args.tag)
     guard_fault_support(cases, health)
 
-    results = []
+    previous: list[dict] = []
+    todo = cases
+    if args.resume:
+        payload = load_partial(Path(args.resume))
+        previous = payload.get("results", [])
+        todo, skipped = plan_resume(cases, {result["id"] for result in previous})
+        rerun_prereq = [
+            case["id"] for case in todo
+            if case["id"] in {result["id"] for result in previous}
+        ]
+        print(f"续跑：跳过 {len(skipped)} 条已完成，待跑 {len(todo)} 条", flush=True)
+        if rerun_prereq:
+            print(f"      其中 {rerun_prereq} 是待跑用例的前置，已完成但会重跑", flush=True)
+
     ground_truth = build_ground_truth()
+
+    if args.dry_run:
+        # 把"能不能跑"的判断提前到 5 秒内：白等 90 分钟才发现服务跑着旧代码，
+        # 是这套流程里最贵的一种失败。这里不加新判据，只是把已有判据挪到前面。
+        with_faults = [case["id"] for case in todo if case.get("faults")]
+        print(f"\n[dry-run] 前置检查全部通过，本轮将跑 {len(todo)} 条：", flush=True)
+        for case in todo:
+            mark = f"  [故障注入 {'/'.join(case['faults'])}]" if case.get("faults") else ""
+            print(f"  - {case['id']}{mark}", flush=True)
+        print(f"\n事实表 {len(ground_truth)} 字符，带故障注入 {len(with_faults)} 条。"
+              f"未发起任何模型调用。", flush=True)
+        return
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    partial = partial_path(stamp)
+    fresh: list[dict] = []
     async with httpx.AsyncClient() as client:
-        for case in cases:  # 顺序执行：memory-recall 依赖 memory-write
+        for case in todo:  # 顺序执行：memory-recall 依赖 memory-write
             print(f"== 评测 {case['id']} ...", flush=True)
             try:
                 result = await run_case(client, case, ground_truth)
@@ -456,10 +557,13 @@ async def main() -> None:
                     "judged": {}, "transcript": f"执行异常：{type(err).__name__}: {err}",
                 }
             print(f"   -> {result['verdict']}（{result['score']}）", flush=True)
-            results.append(result)
+            fresh.append(result)
+            # 每条跑完就落一次盘：整轮 80-120 分钟真金白银，
+            # 第 39 条崩了不该把前面 38 条的结果一起赔进去
+            write_partial(partial, run_line, merge_results(cases, previous, fresh))
 
+    results = merge_results(cases, previous, fresh)
     report = render_report(results, run_line)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     report_path = PROJECT_ROOT / "eval" / f"report-{stamp}.md"
     report_path.write_text(report, encoding="utf-8")
     # 同时落一份机器可读的：bad case 采集要按判据逐条读失败项，
@@ -478,6 +582,9 @@ async def main() -> None:
         ),
         encoding="utf-8",
     )
+    # 正式报告落盘之后才删增量文件：顺序反了的话，报告写失败时两份都没了
+    partial.unlink(missing_ok=True)
+
     print(f"\n报告已写入：{report_path}")
     print(f"结构化结果：{json_path}")
     print(report.split("\n\n")[1])
