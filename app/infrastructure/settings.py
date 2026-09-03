@@ -108,7 +108,7 @@ def load_settings() -> Settings:
     return Settings(
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
-        llm_model=os.getenv("LLM_MODEL", "qwen3-max"),
+        llm_model=os.getenv("LLM_MODEL", "mimo-v2.5"),
         port=int(os.getenv("PORT", "8000")),
         log_level=os.getenv("LOG_LEVEL", "info"),
         # embedding 默认复用 LLM 网关（OpenAI 兼容 /v1/embeddings）
@@ -136,7 +136,7 @@ def load_settings() -> Settings:
         ],
         # 实测 qwen3.7-plus 配额池极紧（单发一条也可能 429），默认配上备用模型保底，
         # 重试用尽后自动回退并发 model.fallback 事件，不静默降级
-        llm_fallback_model=os.getenv("LLM_FALLBACK_MODEL", "qwen-plus"),
+        llm_fallback_model=os.getenv("LLM_FALLBACK_MODEL", "longcat-2.0"),
         # 默认 2 而不是 1：三期真并行 fork 实测 1.84x 加速，设 1 会把并行收益完全抹掉
         llm_max_concurrency=int(os.getenv("LLM_MAX_CONCURRENCY", "2")),
         llm_min_interval_seconds=float(os.getenv("LLM_MIN_INTERVAL_SECONDS", "1.0")),

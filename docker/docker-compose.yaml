@@ -19,9 +19,9 @@ services:
       # 敏感配置透传宿主机环境变量，缺失时直接报错，避免明文落盘
       LLM_BASE_URL: ${LLM_BASE_URL:?需设置 LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY:?需设置 LLM_API_KEY}
-      LLM_MODEL: ${LLM_MODEL:-qwen3-max}
+      LLM_MODEL: ${LLM_MODEL:-mimo-v2.5}
       # 四期：网关配额闸门与限流回退（不配则用 settings 默认值）
-      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-qwen-plus}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-longcat-2.0}
       LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-2}
       LLM_MIN_INTERVAL_SECONDS: ${LLM_MIN_INTERVAL_SECONDS:-1.0}
       LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
@@ -58,8 +58,8 @@ services:
     environment:
       LLM_BASE_URL: ${LLM_BASE_URL:?需设置 LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY:?需设置 LLM_API_KEY}
-      LLM_MODEL: ${LLM_MODEL:-qwen3-max}
-      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-qwen-plus}
+      LLM_MODEL: ${LLM_MODEL:-mimo-v2.5}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-longcat-2.0}
       LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-2}
       LLM_MIN_INTERVAL_SECONDS: ${LLM_MIN_INTERVAL_SECONDS:-1.0}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}

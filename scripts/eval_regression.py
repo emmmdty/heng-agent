@@ -150,7 +150,7 @@ async def call_judge(
     prior_block = f"## 会话前置事实\n{prior_context}\n\n" if prior_context else ""
     payload = {
         # judge 可独立指定模型：主模型切新版/被限流时，评分基准不跟着飘
-        "model": os.environ.get("EVAL_JUDGE_MODEL") or os.environ.get("LLM_MODEL", "qwen-plus"),
+        "model": os.environ.get("EVAL_JUDGE_MODEL") or os.environ.get("LLM_MODEL", "longcat-2.0"),
         "messages": [
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {

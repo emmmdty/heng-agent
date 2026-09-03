@@ -51,11 +51,11 @@ provenance:
 # 整轮回归：40 条 ≈ 80-120 分钟。跑之前先确认 /health 里 semantic_cache 为 false。
 # 其中 3 条带故障注入，需要服务以 make serve-faults 起（否则开跑前被拦下）。
 eval:
-	EVAL_JUDGE_MODEL=deepseek-v4-flash uv run python -u scripts/eval_regression.py
+	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py
 
 # 冒烟档：日常改代码只跑这一档。
 eval-smoke:
-	EVAL_JUDGE_MODEL=deepseek-v4-flash uv run python -u scripts/eval_regression.py --tag smoke
+	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py --tag smoke
 
 # 外部依赖体检：两条隧道 + 应用。读数不对时先查这里，再去看分数。
 health:
