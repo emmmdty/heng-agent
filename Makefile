@@ -6,10 +6,24 @@
 #
 # make 遇到非零退出码即中断，四个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check test datasets cases provenance eval eval-smoke health serve
+.PHONY: check check-ci test datasets cases provenance eval eval-smoke health serve
 
 check: test datasets cases provenance
 	@echo "== 门禁通过 =="
+
+# CI 档：check 去掉金额出处那一项。
+#
+# provenance 扫的是 data/conversations/（跑测产物，gitignore），
+# CI 全新 checkout 上一份流水都没有，`--report latest` 会按设计报错退出。
+# **不给它加"没数据就当通过"的旁路**：0 处金额算出来的 0% 被当成满分放行，
+# 比红灯更危险（十期踩坑 33 的同一条）。宁可在 CI 里明确少跑一项，
+# 也不要让一项判据在 CI 上变成永远绿的装饰。
+#
+# 另：这三项虽然零 LLM 成本，却仍需要 LLM_API_KEY **存在**——
+# 有 4 条测试走 load_settings()（它对缺密钥是 fail-fast 的），一个都不打上游。
+# 所以 CI 里注入占位值即可，见 .github/workflows/check.yml。
+check-ci: test datasets cases
+	@echo "== CI 门禁通过（金额出处项需本地跑测产物，见 check）=="
 
 test:
 	uv run pytest -q

@@ -1,0 +1,42 @@
+# 提交前门禁的机器版。
+#
+# `make check` 一直存在，但那是"提交前记得跑"，靠人；接上 CI 才是靠机器。
+# 这里跑的是 check-ci（= 单测 + 标注集自检 + 用例自检），三项全部零 LLM 成本、
+# 无外部服务依赖，十几秒跑完。
+#
+# **刻意不跑的两项**：
+#   - make eval / eval-smoke：要真实网关配额与两条隧道，属烧钱的端到端回归
+#   - make provenance：扫的是 data/conversations/（跑测产物，gitignore），
+#     CI 上没有流水，`--report latest` 会按设计报错。不给它开"没数据就通过"的
+#     旁路——0 处金额算出来的 0% 被当成满分放行，比红灯更危险。
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # 占位密钥：四条测试走 load_settings()（缺密钥时 fail-fast），但**没有一条打上游**。
+      # 真跑模型的用例集在 make eval 里，不在本 workflow。
+      LLM_API_KEY: ci-placeholder-not-used
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 安装 Python
+        run: uv python install
+
+      - name: 同步依赖（锁定版本）
+        run: uv sync --frozen
+
+      - name: 门禁
+        run: make check-ci
