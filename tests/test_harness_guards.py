@@ -334,3 +334,51 @@ class TestPricingToolSchemas:
         for field in self._fields("optimize_basket_tool"):
             assert field in payload
         assert not check_schema("optimize_basket_tool", chunk.content[0].text).failures
+
+
+class TestOutputGuardToolListStaysInSync:
+    """L4 的内部工具名清单必须跟着工具集走。
+
+    十六期发现它停在八期的状态：后来加的 quote_basket / optimize_basket /
+    forget_preference 三个都不在里面——**漏一个就等于那个工具名可以原样
+    出现在买家回复里，而没有任何东西会报警**（同踩坑 37「写好了没接上」）。
+
+    这类"清单与实现脱钩"在本仓已经出现过三次（工具描述里的目的国枚举、
+    Harness 接线、这一处），共同点是：脱钩之后的外观与"故意不做"完全一样。
+    """
+
+    def _declared_tools(self) -> set:
+        """从 app/application/tools/ 下真实定义的函数名取工具集。
+
+        不 import 模块（那需要构造一堆依赖），直接读源码里的 `async def xxx_tool(`——
+        工具函数的命名在本仓是强约定，task_dispatch 是唯一的例外，单列。
+        """
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1] / "app" / "application" / "tools"
+        names = set()
+        for path in root.glob("*.py"):
+            names |= set(re.findall(r"async def (\w+_tool)\(", path.read_text(encoding="utf-8")))
+            names |= set(re.findall(r"async def (task_dispatch)\(", path.read_text(encoding="utf-8")))
+        return names
+
+    def test_every_real_tool_name_is_masked(self):
+        from app.infrastructure.security.output_guard import _INTERNAL_TOOLS
+
+        missing = sorted(self._declared_tools() - set(_INTERNAL_TOOLS))
+        assert not missing, f"这些工具名不会被 L4 脱敏，可以原样出现在买家回复里：{missing}"
+
+    def test_the_list_has_no_ghosts(self):
+        """反向也要钉：清单里不该有已经删掉的工具名——
+        那会让人以为它还在，排查时白找一圈。"""
+        from app.infrastructure.security.output_guard import _INTERNAL_TOOLS
+
+        ghosts = sorted(set(_INTERNAL_TOOLS) - self._declared_tools())
+        assert not ghosts, f"清单里有已不存在的工具名：{ghosts}"
+
+    def test_masking_actually_happens(self):
+        from app.infrastructure.security.output_guard import audit_output
+
+        safe, cleaned = audit_output("我调用了 optimize_basket_tool 帮你配组合")
+        assert safe is False and "optimize_basket_tool" not in cleaned

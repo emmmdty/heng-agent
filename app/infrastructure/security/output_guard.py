@@ -21,15 +21,24 @@ import re
 
 REDACTED = "[已脱敏]"
 
-# 真实存在的内部工具名（与 app/application/tools/ 一致）
+# 真实存在的内部工具名（与 app/application/tools/ 一致）。
+#
+# 这份清单**必须跟着工具集走**：十六期发现它停在了八期的状态，
+# 后来加的 quote_basket / optimize_basket / forget_preference 三个都不在里面——
+# 漏一个就等于那个工具名可以原样出现在买家回复里，而没有任何东西会报警
+# （与踩坑 37「写好了没接上」同一类）。`tests/test_harness_guards.py`
+# 拿 app/application/tools/ 下真实定义的工具名把它钉住了。
 _INTERNAL_TOOLS = (
     "product_search_tool",
     "category_insight_tool",
     "web_search_tool",
+    "quote_basket_tool",
+    "optimize_basket_tool",
     "create_order_tool",
     "query_order_tool",
     "cancel_order_tool",
     "remember_preference_tool",
+    "forget_preference_tool",
     "task_dispatch",
 )
 
