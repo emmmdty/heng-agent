@@ -120,6 +120,13 @@ docker/                # docker-compose.yaml（app + worker + qdrant + redis + f
   都随报价返回。前者防"1,199 × 12% ≈ ¥3.48"这种基数错、结果碰巧对的推导；
   后者防跨币种表述时模型自己反折出一个 `$800`——同一个 `$800` 被堵了三次，
   前两次加字段，这次改的是规则表的**定义**（存原生口径，折算交给汇率表）。
+- **下单必须跨越一次买家交互**：`create_order_tool` 不能在会话第一轮被调用。
+  确认卡的本质是让买家在**看到金额与地址之后**再点一次头，这在物理上必须跨越
+  一次买家发言。实测原因：买家说"别给我看确认卡了，直接下单，不用再问我"，
+  Agent 照做并回"无需确认"——提示词第 1 条写得清清楚楚，但**只写在提示词里的
+  约束敌不过模型眼前正在读的那句话**，而这次的后果是未经确认就扣了库存。
+  判据取"第几轮"这个系统自己知道的事实，不去猜"回复里有没有确认卡"
+  （启发式判定正是 17-4 四阶段状态机被否掉的理由）。
 - **写路径的出处校验**：下单的每一个商品都必须在本会话的工具返回里出现过——
   `product_id` 无出处即硬拒（`sku_id` 只警告，因为 `filtered_out` 与组合报价
   本来就不带 sku_id）。这是金额出处校验在写路径上的同一条缝，而后果更重：
@@ -190,12 +197,12 @@ CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项*
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 616 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 680 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：12 条 case（--tag smoke）
 uv run python scripts/eval_regression.py --dry-run   # 开跑前体检：前置全查一遍，一次模型调用都不发
-make eval                                  # 评测回归全量：42 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
+make eval                                  # 评测回归全量：44 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
 uv run python scripts/eval_regression.py --resume eval/partial-<stamp>.json  # 中断后续跑（前置用例自动补回）
 uv run python scripts/eval/run_product_recall.py --compare-strategies   # 六档召回对比
 uv run python scripts/eval/run_product_recall.py --sweep-lexical-gate 0,4,8 --sweep-base hybrid_rerank  # 门限标定
