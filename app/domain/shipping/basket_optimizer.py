@@ -10,19 +10,25 @@
 
 **目标函数（字典序）**：
     1. 覆盖的需求组数最多；
-    2. 同覆盖数下组合**到手价最低**；
-    3. 仍并列时按 product_id 字典序取定。
+    2. 同覆盖数下**优先保住靠前的需求**（needs 按买家陈述顺序传入）；
+    3. 仍并列时组合**到手价最低**；
+    4. 再并列按 product_id 字典序取定。
 
 不按"评分/性价比"最优是刻意的：那要先定义一个价值模型，而价值模型无法确定性验证，
 ground truth 立刻退回给 LLM judge 打分。60 SPU 的候选空间小到可以暴力枚举出真最优解，
 **能拿回确定性判据的，就别留给 judge**。
 
+第 2 条是写评测用例时才补上的（原本"同覆盖数直接取最便宜"）。实算一条真实场景
+立刻露馅：预算 250 美元、需求是「降噪耳机 219 美元 + 充电器 22.39 美元」，
+两件合计 256.04 超预算，取最便宜的单件解等于**丢掉买家的主要需求**，
+给出"配了个 31.54 美元的充电器、还剩 218 美元"这种荒唐答案。
+按陈述顺序保主需求后是"耳机 228.15、还剩 21.85、充电器还差 9.69"——才是买家要的答案。
+**顺序是显式契约**：调用方按买家说的先后传 needs，工具不做优先级猜测。
+
 预算按**到手价**判定（含运费与关税），不是按商品小计：买家说"300 块预算"
 指的是最终付款额，按小计判会给出"看着够、结账超"的方案。
 
-需求之间**等权**：配不齐时取覆盖数最多、其次最便宜的那组，不做优先级推断
-（"哪个需求更重要"没有可靠判据，猜错等于替买家做主）。缺口连同它的价签一起回传，
-让 Agent 有据可依地说"再加 X 就能把 Y 配上"。
+缺口连同它的价签一起回传，让 Agent 有据可依地说"再加 X 就能把 Y 配上"。
 """
 from __future__ import annotations
 
@@ -71,6 +77,10 @@ class UncoveredNeed:
     reason: str
     cheapest_product_id: str | None = None
     cheapest_landed: Money | None = None
+    # 把这一件也加进当前组合后，预算还差多少。只有 cheapest_landed 是不够的：
+    # 买家问的是"再加多少能配上"，而那个数既不是单买价、也不是差价，
+    # 是「加进来之后的组合到手价 − 预算」——模型自己算必然没有出处。
+    additional_budget_needed: Money | None = None
 
     @property
     def cheapest_landed_major(self) -> float | None:
@@ -81,9 +91,12 @@ class UncoveredNeed:
             "need": self.need,
             "reason": self.reason,
             "cheapest_product_id": self.cheapest_product_id,
-            # 缺口的价签必须回传：不给的话 Agent 想说"再加 300 就能配上"
-            # 就只能自己减，正是这个工具要堵的那条缝
+            # 缺口的价签必须回传，否则 Agent 只能自己减
             "cheapest_landed_major": self.cheapest_landed_major,
+            "additional_budget_needed_major": (
+                round(self.additional_budget_needed.to_major_units(), 2)
+                if self.additional_budget_needed is not None else None
+            ),
         }
 
 
@@ -261,16 +274,24 @@ def optimize_basket(
     considered = 0
     for combo in itertools.product(*options):
         considered += 1
-        chosen = [
-            (group, candidate)
-            for group, candidate in zip(groups, combo)
+        picked = [
+            (index, group, candidate)
+            for index, (group, candidate) in enumerate(zip(groups, combo))
             if candidate is not None
         ]
+        chosen = [(group, candidate) for _, group, candidate in picked]
         quote = quote_of(chosen)
         landed_minor = quote.landed_total().amount_in_minor_units if quote else 0
         if budget_target is not None and landed_minor > budget_target.amount_in_minor_units:
             continue
-        key = (-len(chosen), landed_minor, tuple(c.product_id for _, c in chosen))
+        # 覆盖数 → 保住靠前的需求 → 到手价 → product_id。第二项是关键：
+        # 少了它，"配不齐时取最便宜"会丢掉买家的主要需求（见模块 docstring 的实算）。
+        key = (
+            -len(chosen),
+            tuple(index for index, _, _ in picked),
+            landed_minor,
+            tuple(c.product_id for _, c in chosen),
+        )
         if best_key is None or key < best_key:
             best_key, best = key, (chosen, quote)
 
@@ -293,12 +314,26 @@ def optimize_basket(
             ).landed_total()
             if cheapest is None or landed.amount_in_minor_units < cheapest[0]:
                 cheapest = (landed.amount_in_minor_units, candidate)
+
+        # "预算再加多少就能把它一起配上"：把这件最便宜的候选并进当前组合重新报价，
+        # 与预算相减。注意不能拿单买价去减——组合运费是一次履约，
+        # 并进来只多付续件的 60%，用单买价算出来的缺口会偏大。
+        additional: Money | None = None
+        if budget_target is not None:
+            with_it = quote_of([*chosen, (group, cheapest[1])])
+            gap_minor = (
+                with_it.landed_total().amount_in_minor_units
+                - budget_target.amount_in_minor_units
+            ) if with_it else 0
+            additional = Money.of(max(0, gap_minor), target_currency)
+
         uncovered.append(
             UncoveredNeed(
                 need=group.need,
                 reason=REASON_OVER_BUDGET,
                 cheapest_product_id=cheapest[1].product_id,
                 cheapest_landed=Money.of(cheapest[0], target_currency),
+                additional_budget_needed=additional,
             ),
         )
 

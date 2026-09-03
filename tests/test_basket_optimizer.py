@@ -12,8 +12,9 @@
 
 目标函数（字典序，刻意选可判定的口径）：
     1. 覆盖的需求组数最多；
-    2. 同覆盖数下组合**到手价最低**；
-    3. 仍并列时按 product_id 字典序取定（保证同输入同输出，可作回归基线）。
+    2. 同覆盖数下**优先保住靠前的需求**（needs 按买家陈述顺序传入）；
+    3. 再并列时组合**到手价最低**；
+    4. 仍并列按 product_id 字典序取定（保证同输入同输出，可作回归基线）。
 不按"评分/性价比"最优，是因为那要先定义一个价值模型，而价值模型无法确定性验证，
 ground truth 立刻退回给 judge 打分。
 """
@@ -78,6 +79,10 @@ class TestObjective:
         assert plan.uncovered[0].cheapest_landed_major == 525.0
         assert plan.uncovered[0].cheapest_product_id == "P3"
         assert plan.uncovered[0].reason == "over_budget"
+        # "预算再加多少能配上"：并进组合后 700+40=740，减预算 600 → 140。
+        # 注意不是单买价 525 减剩余预算（375）——组合运费只多付续件 60%，
+        # 拿单买价算出来的缺口会偏大，而这正是模型自己算时会犯的错。
+        assert plan.uncovered[0].to_dict()["additional_budget_needed_major"] == 140.0
 
     def test_budget_is_judged_on_landed_price_not_subtotal(self, tariff):
         """预算按**到手价**判定（含运费关税）。买家说"300 块预算"指的是最终付款额，
@@ -100,6 +105,26 @@ class TestObjective:
         plan = optimize_basket(tariff, groups, ship_to="CN", target_currency="CNY")
         assert plan.uncovered[0].reason == "no_candidates"
         assert plan.uncovered[0].cheapest_landed_major is None
+        assert plan.uncovered[0].to_dict()["additional_budget_needed_major"] is None
+
+    def test_earlier_need_wins_when_budget_covers_only_one(self, tariff):
+        """同覆盖数下**先保住靠前的需求**，不是取最便宜的那件。
+
+        这条是写评测用例时实算出来的：预算 250 美元、需求「降噪耳机 219 + 充电器 22.39」，
+        两件合计 256.04 超预算。原规则（同覆盖数取最便宜）会配一个 31.54 的充电器、
+        剩 218 美元——买家的主要需求被丢掉，答案荒唐。
+        needs 按买家陈述顺序传入，顺序就是优先级，工具不做优先级猜测。
+        """
+        groups = [
+            NeedGroup(need="降噪耳机", candidates=[_candidate("P1", 1554.9)]),
+            NeedGroup(need="充电器", candidates=[_candidate("P2", 159)]),
+        ]
+        plan = optimize_basket(
+            tariff, groups, ship_to="CN", target_currency="CNY",
+            budget=Money.from_major_units(1600, "CNY"),
+        )
+        assert [line.product_id for line in plan.quote.lines] == ["P1"]
+        assert [item.need for item in plan.uncovered] == ["充电器"]
 
     def test_ties_break_on_product_id_for_reproducibility(self, tariff):
         """同价并列时按 product_id 取定：优化器是评测基线，同输入必须同输出。"""
@@ -230,7 +255,10 @@ class TestOptimalityAgainstBruteForce:
             best = None
             options = [[None, *group.candidates] for group in groups]
             for combo in itertools.product(*options):
-                chosen = [(g, c) for g, c in zip(groups, combo) if c is not None]
+                picked = [
+                    (i, g, c) for i, (g, c) in enumerate(zip(groups, combo)) if c is not None
+                ]
+                chosen = [(g, c) for _, g, c in picked]
                 if not chosen:
                     landed, covered = 0, 0
                 else:
@@ -247,7 +275,12 @@ class TestOptimalityAgainstBruteForce:
                     covered = len(chosen)
                 if landed > budget.amount_in_minor_units:
                     continue
-                key = (-covered, landed, tuple(c.product_id for _, c in chosen))
+                key = (
+                    -covered,
+                    tuple(i for i, _, _ in picked),
+                    landed,
+                    tuple(c.product_id for _, c in chosen),
+                )
                 if best is None or key < best[0]:
                     best = (key, landed, covered)
 
