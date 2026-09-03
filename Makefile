@@ -6,7 +6,7 @@
 #
 # make 遇到非零退出码即中断，四个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check check-ci test datasets cases provenance eval eval-smoke health serve serve-faults
+.PHONY: check check-ci test datasets cases provenance eval eval-smoke variance health serve serve-faults
 
 check: test datasets cases provenance
 	@echo "== 门禁通过 =="
@@ -56,6 +56,12 @@ eval:
 # 冒烟档：日常改代码只跑这一档。
 eval-smoke:
 	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py --tag smoke
+
+# 跑测方差：同一配置 + 同一判据下，同一条用例的分数散布。
+# 没有方差就没有显著性——"这次 0.973、上次 0.95"是改好了还是抖了一下，
+# 不量方差只能靠感觉答，而靠感觉答的结果是真退化被当成抖动放过。
+variance:
+	uv run python scripts/eval/variance.py
 
 # 外部依赖体检：两条隧道 + 应用。读数不对时先查这里，再去看分数。
 health:
