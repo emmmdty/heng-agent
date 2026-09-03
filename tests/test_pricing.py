@@ -196,7 +196,7 @@ class TestDeMinimisThresholdIsSourced:
 
     真实发现（干净整轮的出处校验）：Agent 写"美国 $800 以下免税（de_minimis）"，
     而工具只返回 `de_minimis_applied: true`，**从不给阈值本身**——
-    这个 800 是模型从自己的知识里说的。改了 `_DE_MINIMIS_CNY_MINOR["US"]`，
+    这个 800 是模型从自己的知识里说的。改了规则表里 US 的额度（十一期后是 `_DE_MINIMIS_NATIVE["US"]`），
     它照样会说 800，而且没有任何东西会报错。
 
     这正是"回复里的每个金额都要有工具出处"要覆盖的东西：
