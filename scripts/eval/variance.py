@@ -52,7 +52,9 @@ def config_key(report: dict) -> str:
     return str(report.get("run") or "未知配置")
 
 
-def collect_scores(reports: list[dict]) -> dict[tuple[str, str], list[float]]:
+def collect_scores(
+    reports: list[dict], require_fingerprint: bool = False,
+) -> dict[tuple[str, str], list[float]]:
     """(配置行, case_id) → 分数列表。ERROR 轮次不计入——它没有判分，
     把 0.0 混进方差会把"跑挂了"算成"分数低"。"""
     scores: dict[tuple[str, str], list[float]] = defaultdict(list)
@@ -66,6 +68,9 @@ def collect_scores(reports: list[dict]) -> dict[tuple[str, str], list[float]]:
             # 本工具第一版就栽在这里，算出 0.325 的"波动"，
             # 而那其实是我自己把判据改对了。
             rubric = str(result.get("rubric_fingerprint") or "未记录")
+            if require_fingerprint and rubric == "未记录":
+                # 十八期之前的报告不记判据指纹，混进来会把"改判据前后"当成波动
+                continue
             scores[(f"{key_config}｜判据 {rubric}", result["id"])].append(
                 float(result.get("score", 0.0)),
             )
@@ -95,13 +100,21 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", default=str(EVAL_DIR), help="报告目录")
     parser.add_argument("--min-runs", type=int, default=2, help="至少跑过几轮才统计")
+    parser.add_argument(
+        "--require-fingerprint",
+        action="store_true",
+        help="只统计带判据指纹的报告（十八期之后的）。要拿到干净的自然波动读数就加上它",
+    )
     args = parser.parse_args()
 
     reports = load_reports(Path(args.dir))
     if not reports:
         raise SystemExit(f"没有找到报告（{args.dir}/report-*.json）")
 
-    rows = summarize(collect_scores(reports), args.min_runs)
+    rows = summarize(
+        collect_scores(reports, require_fingerprint=args.require_fingerprint),
+        args.min_runs,
+    )
     print(f"# 跑测方差（{len(reports)} 份报告，至少 {args.min_runs} 轮的用例）\n")
     if not rows:
         print(f"没有用例在同一配置下跑过 {args.min_runs} 轮以上——"

@@ -69,3 +69,24 @@ class TestSummary:
 
     def test_config_key_falls_back_when_missing(self):
         assert config_key({}) == "未知配置"
+
+
+class TestRequireFingerprint:
+    """只统计带判据指纹的报告——要拿到干净的自然波动读数就得排除旧报告。"""
+
+    def test_filters_out_unfingerprinted_results(self):
+        reports = [
+            {"run": "A", "results": [{"id": "c1", "score": 1.0, "verdict": "PASS"}]},
+            _report("A", [_result("c1", 0.5)]),
+        ]
+        assert collect_scores(reports, require_fingerprint=True) == {
+            ("A｜判据 r1", "c1"): [0.5],
+        }
+
+    def test_default_keeps_everything(self):
+        """默认不过滤：旧报告也有参考价值，只是工具会警告不能当自然波动。"""
+        reports = [
+            {"run": "A", "results": [{"id": "c1", "score": 1.0, "verdict": "PASS"}]},
+            _report("A", [_result("c1", 0.5)]),
+        ]
+        assert sum(len(v) for v in collect_scores(reports).values()) == 2
