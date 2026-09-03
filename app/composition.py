@@ -313,6 +313,10 @@ async def build_container() -> Container:
         sessions, bus, preference_store, conversation_store, semantic_cache,
         output_guard_enabled=settings.output_guard_enabled,
         loop_detector=loop_detector,
+        # 轮次由编排器推进——漏传这一个，ConfirmationTracker 就永远停在 0 轮，
+        # 判据一路走"无记录 → 只警告"，看起来一切正常而实际从没拦过任何东西。
+        # 十八期首次接线就漏了它，靠 full 轮里 skip-confirm-refused 再次 FAIL 才发现。
+        confirmation=confirmation_tracker,
         token_budget_total=settings.token_budget_total,
         drift_detector=drift_detector,
         preference_selector=preference_selector,

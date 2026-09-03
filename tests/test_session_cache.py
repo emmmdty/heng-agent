@@ -161,3 +161,43 @@ class TestCompositionWiresEviction:
         from app.infrastructure.settings import Settings
 
         assert Settings.session_cache_max > 0
+
+
+class TestConfirmationTrackerIsWiredEverywhere:
+    """确认判据要在**三处**都接上，少一处它就静默失效。
+
+    十八期首次接线漏了编排器那一处：中间件拿到了 tracker、工厂也拿到了，
+    唯独没人调用 `begin_turn`，于是轮次恒为 0、判据一路走"无记录 → 只警告"——
+    **看起来一切正常，而它从没拦过任何东西**。
+    full 轮里 `skip-confirm-refused` 再次 FAIL 0.0 才把它揪出来。
+
+    这正是踩坑 37 的原话在我自己身上重演一次：
+    **一道护栏在拒过一次之前，"它没误杀"这个读数没有信息量。**
+    """
+
+    def test_all_three_wiring_points(self):
+        import inspect
+
+        from app import composition
+
+        source = inspect.getsource(composition)
+        for point, why in (
+            ("confirmation=confirmation_tracker,", "工具中间件与编排器都要拿到同一个实例"),
+            ("confirmation_tracker.reset(session_id)", "会话淘汰时要一起清"),
+        ):
+            assert point in source, f"接线缺失（{why}）：{point}"
+        # 编排器与工厂各一次 + 淘汰回调一次
+        assert source.count("confirmation=confirmation_tracker,") >= 3, (
+            "confirmation_tracker 必须同时传给中间件 provider、MainAgentFactory 与 MainAgentOrchestrator"
+        )
+
+    def test_orchestrator_accepts_and_uses_it(self):
+        import inspect
+
+        from app.application.agents import orchestrator
+
+        source = inspect.getsource(orchestrator)
+        assert "self._confirmation.begin_turn(session_id, has_history)" in source
+        assert "self._begin_turn(session_id, has_history)" in source, (
+            "每轮开始必须推进轮次，否则判据永远停在 0 轮"
+        )
