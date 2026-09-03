@@ -9,6 +9,8 @@ create_order_tool / query_order_tool / cancel_order_tool。
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 from agentscope.agent import Agent, ReActConfig
 from agentscope.tool import FunctionTool, Toolkit
 
@@ -26,12 +28,10 @@ from app.application.usecases.order_usecases import (
     QueryOrderUseCase,
 )
 from app.infrastructure.eventbus import TradeEventBus
+from app.infrastructure.harness_middleware import build_tool_middlewares
 from app.infrastructure.llm import create_chat_model
 from app.infrastructure.throttle import GatewayThrottle
-from app.infrastructure.resilience import (
-    CircuitBreakerRegistry,
-    ToolResilienceMiddleware,
-)
+from app.infrastructure.resilience import CircuitBreakerRegistry
 from app.infrastructure.settings import Settings
 from app.infrastructure.tracing import build_agent_middlewares
 
@@ -46,6 +46,7 @@ class TradeAgentFactory:
         bus: TradeEventBus,
         circuit_registry: CircuitBreakerRegistry,
         throttle: GatewayThrottle,
+        tool_middlewares: Optional[Callable[[], list]] = None,
     ) -> None:
         self._settings = settings
         self._place_order = place_order
@@ -54,9 +55,16 @@ class TradeAgentFactory:
         self._bus = bus
         self._circuit_registry = circuit_registry
         self._throttle = throttle
+        # 见 SearchAgentFactory 的同名字段：这条链必须带 Harness，
+        # 下单的顺序硬拒与出处校验都挂在它上面
+        self._tool_middlewares = tool_middlewares
 
     def _resilience(self) -> list:
-        return [ToolResilienceMiddleware(self._circuit_registry, self._bus)]
+        if self._tool_middlewares is not None:
+            return self._tool_middlewares()
+        return build_tool_middlewares(
+            self._settings, circuit_registry=self._circuit_registry, bus=self._bus,
+        )
 
     def build_tools(self) -> list[FunctionTool]:
         """TradeAgent 的业务工具集，MainAgent 单干时持有同一批（均带超时+熔断保护）。"""

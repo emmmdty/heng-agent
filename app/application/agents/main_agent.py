@@ -43,7 +43,8 @@ from app.application.tools.task_dispatch_tool import build_task_dispatch_tool
 from app.domain.buyer.preference import PreferenceStore
 from app.domain.session.ports.session_store import SessionStore
 from app.infrastructure.eventbus import TradeEventBus
-from app.infrastructure.harness_middleware import HarnessToolMiddleware
+from app.application.harness.order_provenance import OrderProvenanceTracker
+from app.infrastructure.harness_middleware import build_tool_middlewares
 from app.infrastructure.llm import create_chat_model
 from app.infrastructure.throttle import GatewayThrottle
 from app.infrastructure.resilience import (
@@ -68,6 +69,7 @@ class MainAgentFactory:
         throttle: GatewayThrottle,
         sequencing: Optional[SequencingTracker] = None,
         loop_detector: Optional[LoopDetector] = None,
+        order_provenance: Optional[OrderProvenanceTracker] = None,
         preference_selector: Optional[PreferenceSelector] = None,
     ) -> None:
         self._settings = settings
@@ -81,27 +83,26 @@ class MainAgentFactory:
         self._preference_selector = preference_selector or PreferenceSelector()
         # 护栏判定器按会话累积状态，须跨 Agent 实例共享（与熔断注册表同理）
         self._sequencing = sequencing or SequencingTracker()
+        self._order_provenance = order_provenance or OrderProvenanceTracker()
         self._loop_detector = loop_detector or LoopDetector(
             repeat_threshold=settings.loop_repeat_threshold,
         )
 
     def _resilience(self) -> list:
-        """工具中间件链。
+        """工具中间件链——与检索/订单两个工厂共用同一份定义。
 
-        洋葱顺序：Harness 在外、Resilience 在内——先做准入判定（顺序/循环），
-        再进超时与熔断保护；这样被硬拒的调用不会白白占用一次熔断名额。
+        十四期之前这里各写了一遍：主 Agent 这份带 Harness，另外两个工厂那份只有熔断，
+        于是业务工具上的顺序硬拒、schema 断言、L3 过滤一次都没跑过
+        （见 `tests/test_harness_wiring.py`）。收成一处才防得住下一次。
         """
-        chain: list = []
-        if self._settings.harness_enabled:
-            chain.append(
-                HarnessToolMiddleware(
-                    sequencing=self._sequencing,
-                    loop_detector=self._loop_detector,
-                    bus=self._bus,
-                ),
-            )
-        chain.append(ToolResilienceMiddleware(self._circuit_registry, self._bus))
-        return chain
+        return build_tool_middlewares(
+            self._settings,
+            circuit_registry=self._circuit_registry,
+            bus=self._bus,
+            sequencing=self._sequencing,
+            loop_detector=self._loop_detector,
+            order_provenance=self._order_provenance,
+        )
 
     def build(self, restored_state: Optional[AgentState] = None) -> Agent:
         prompts = load_prompts()["main_agent"]

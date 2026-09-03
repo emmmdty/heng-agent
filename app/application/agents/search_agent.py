@@ -14,6 +14,8 @@
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 from agentscope.agent import Agent, ReActConfig
 from agentscope.rag import KnowledgeBase
 from agentscope.tool import FunctionTool, Toolkit
@@ -29,10 +31,8 @@ from app.application.usecases.catalog_search import CatalogSearchUseCase
 from app.infrastructure.eventbus import TradeEventBus
 from app.infrastructure.llm import create_chat_model
 from app.infrastructure.throttle import GatewayThrottle
-from app.infrastructure.resilience import (
-    CircuitBreakerRegistry,
-    ToolResilienceMiddleware,
-)
+from app.infrastructure.harness_middleware import build_tool_middlewares
+from app.infrastructure.resilience import CircuitBreakerRegistry
 from app.domain.catalog.ports.product_repository import ProductRepository
 from app.domain.shipping.tariff_schedule import TariffSchedule
 from app.infrastructure.settings import Settings
@@ -50,6 +50,7 @@ class SearchAgentFactory:
         throttle: GatewayThrottle,
         product_repo: ProductRepository,
         tariff: TariffSchedule,
+        tool_middlewares: Optional[Callable[[], list]] = None,
     ) -> None:
         self._settings = settings
         self._catalog_search = catalog_search
@@ -60,9 +61,17 @@ class SearchAgentFactory:
         self._circuit_registry = circuit_registry
         # 闸门由组装根下发，三个工厂必须共用同一个，否则各限一份等于没限
         self._throttle = throttle
+        # 工具中间件链由组装根下发（判定器按会话累积状态，必须跨 Agent 共享）。
+        # 缺省时自建一条完整链——**不能只留熔断**：十四期就是因为这里少了 Harness，
+        # 顺序硬拒/schema 断言/L3 过滤在业务工具上一次都没跑过。
+        self._tool_middlewares = tool_middlewares
 
     def _resilience(self) -> list:
-        return [ToolResilienceMiddleware(self._circuit_registry, self._bus)]
+        if self._tool_middlewares is not None:
+            return self._tool_middlewares()
+        return build_tool_middlewares(
+            self._settings, circuit_registry=self._circuit_registry, bus=self._bus,
+        )
 
     def build_tools(self) -> list[FunctionTool]:
         """SearchAgent 的业务工具集，MainAgent 单干时持有同一批（均带超时+熔断保护）。

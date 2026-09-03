@@ -25,6 +25,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, AsyncGenerator, Callable, Optional
 
@@ -33,6 +34,7 @@ from agentscope.tool import ToolBase, ToolChunk, ToolMiddlewareBase
 
 from app.application.harness.assertions import SequencingTracker, check_schema
 from app.application.harness.loop_detector import LoopDetector
+from app.application.harness.order_provenance import OrderProvenanceTracker
 from app.infrastructure.context import ShoppingContext
 from app.infrastructure.eventbus import TradeEventBus
 from app.infrastructure.security.content_filter import sanitize_tool_output
@@ -46,11 +48,15 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
         *,
         sequencing: SequencingTracker,
         loop_detector: LoopDetector,
+        order_provenance: Optional[OrderProvenanceTracker] = None,
         bus: Optional[TradeEventBus] = None,
         content_filter_enabled: bool = True,
     ) -> None:
         self._sequencing = sequencing
         self._loop_detector = loop_detector
+        # 下单参数出处校验（十四期）。可选是为了让既有单测不必逐个改造，
+        # 但组装根一律注入——写路径少一道判据的代价是错误订单已经落库。
+        self._order_provenance = order_provenance or OrderProvenanceTracker()
         self._bus = bus
         self._content_filter_enabled = content_filter_enabled
 
@@ -85,6 +91,21 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
             return
         notices.extend(seq.warnings)
 
+        # ---- pre_tool_call：下单参数出处校验（写路径）----
+        # 顺序断言只管"有没有检索过"，管不了"下单的是不是检索到的那个"。
+        # 仓储查得到的、真实存在但买家从没看过的 SKU，四道既有防护一道都不响。
+        if tool_name == "create_order_tool":
+            prov = self._order_provenance.check(session_id, input_kwargs.get("items"))
+            if prov.rejected:
+                logger.warning("Harness 拒绝下单（出处不足）：%s", prov.reject_reason)
+                self._publish(tool_name, {"harness": "rejected", "error": prov.reject_reason})
+                yield ToolChunk(
+                    content=[TextBlock(type="text", text=f"[error] {prov.reject_reason}")],
+                    state=ToolResultState.ERROR,
+                )
+                return
+            notices.extend(prov.warnings)
+
         # ---- pre_tool_call：循环检测 ----
         converge_hint = self._loop_detector.check(session_id, tool_name)
         if converge_hint:
@@ -109,6 +130,17 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
             yield chunk
 
         text = _chunk_text(last)
+
+        # ---- post_tool_call：累积出处 ----
+        # 每个工具的返回都进出处集合：检索给 hits/filtered_out，
+        # 计价与组合优化给 lines/selection——下单能引用的商品来自它们全体。
+        self._order_provenance.record_result(session_id, text)
+        if tool_name == "create_order_tool":
+            order_id = _extract_order_id(text)
+            if order_id:
+                self._order_provenance.record_order(
+                    session_id, input_kwargs.get("items"), order_id,
+                )
 
         # Schema 断言
         schema_outcome = check_schema(tool_name, text)
@@ -170,3 +202,53 @@ def _rebuild_chunk(original: ToolChunk, text: str, notices: list[str]) -> ToolCh
         content=[TextBlock(type="text", text=text)],
         state=original.state,
     )
+
+
+def _extract_order_id(text: str) -> str:
+    """从 create_order 的返回里取订单号（失败返回空串，不抛）。"""
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return ""
+    return str(payload.get("order_id", "")) if isinstance(payload, dict) else ""
+
+
+def build_tool_middlewares(
+    settings: Any,
+    *,
+    circuit_registry: Any,
+    bus: Optional[TradeEventBus] = None,
+    sequencing: Optional[SequencingTracker] = None,
+    loop_detector: Optional[LoopDetector] = None,
+    order_provenance: Optional[OrderProvenanceTracker] = None,
+) -> list:
+    """业务工具的中间件链——**三个 Agent 工厂共用这一份定义**。
+
+    洋葱顺序：Harness 在外、Resilience 在内。先做准入判定（顺序 / 出处 / 循环），
+    再进超时与熔断保护；这样被硬拒的调用不会白白占用一次熔断名额。
+
+    为什么要收成一个函数：十四期发现**业务工具其实从没挂上 Harness**——
+    每个工厂各写了一遍 `_resilience()`，主 Agent 那份带 Harness，
+    检索与订单两个工厂那份只有熔断。于是顺序硬拒、schema 断言、L3 注入过滤
+    在真正需要它们的工具上一次都没跑过，而外观与"故意不做"完全一样。
+    一份定义 + 一条接线判据（`tests/test_harness_wiring.py`），才防得住下一次。
+
+    判定器（sequencing / loop / order_provenance）**按会话累积状态，必须跨 Agent 共享**，
+    所以组装根注入同一批实例；这里的默认值只服务于单独构造工厂的单测。
+    """
+    from app.infrastructure.resilience import ToolResilienceMiddleware
+
+    chain: list = []
+    if getattr(settings, "harness_enabled", True):
+        chain.append(
+            HarnessToolMiddleware(
+                sequencing=sequencing or SequencingTracker(),
+                loop_detector=loop_detector or LoopDetector(
+                    repeat_threshold=getattr(settings, "loop_repeat_threshold", 3),
+                ),
+                order_provenance=order_provenance or OrderProvenanceTracker(),
+                bus=bus,
+            ),
+        )
+    chain.append(ToolResilienceMiddleware(circuit_registry, bus))
+    return chain

@@ -27,6 +27,7 @@ from app.application.agents.trade_agent import TradeAgentFactory
 from app.application.harness.assertions import SequencingTracker
 from app.application.harness.drift_detector import DriftDetector
 from app.application.harness.loop_detector import LoopDetector
+from app.application.harness.order_provenance import OrderProvenanceTracker
 from app.application.memory.preference_selector import PreferenceSelector
 from app.application.usecases.catalog_search import CatalogSearchUseCase
 from app.application.usecases.order_usecases import (
@@ -40,6 +41,7 @@ from app.infrastructure.cache.redis_cache import RedisCache
 from app.infrastructure.cache.semantic_cache import SemanticCache
 from app.infrastructure.embedding.openai_embedding_client import OpenAIEmbeddingClient
 from app.infrastructure.faults import FaultRegistry, install_fault_injection
+from app.infrastructure.harness_middleware import build_tool_middlewares
 from app.infrastructure.eventbus import TradeEventBus
 from app.infrastructure.persistence.in_memory_repositories import (
     InMemoryOrderRepository,
@@ -227,6 +229,23 @@ async def build_container() -> Container:
     # 护栏判定器同样全进程唯一：按会话累积状态，需跨 Agent 实例与轮次共享
     sequencing_tracker = SequencingTracker()
     loop_detector = LoopDetector(repeat_threshold=settings.loop_repeat_threshold)
+    # 下单参数出处校验（十四期）：与顺序断言同样按会话累积，必须全进程唯一
+    order_provenance_tracker = OrderProvenanceTracker()
+
+    def tool_middlewares() -> list:
+        """每个工具一条新链（中间件实例不共享），但判定器是同一批。
+
+        三个 Agent 工厂共用这一个 provider——十四期之前它们各建各的，
+        结果业务工具压根没挂上 Harness（tests/test_harness_wiring.py 钉住了这件事）。
+        """
+        return build_tool_middlewares(
+            settings,
+            circuit_registry=circuit_registry,
+            bus=bus,
+            sequencing=sequencing_tracker,
+            loop_detector=loop_detector,
+            order_provenance=order_provenance_tracker,
+        )
     # 漂移检测默认关：它会改变模型行为（并可选地额外调轻量模型），
     # 必须是显式开启的选择；关时注入 None，主链路零开销
     drift_detector = DriftDetector() if settings.drift_detect_enabled else None
@@ -245,9 +264,11 @@ async def build_container() -> Container:
     search_factory = SearchAgentFactory(
         settings, catalog_search, bus, knowledge_base, circuit_registry, throttle,
         product_repo=product_repo, tariff=TariffSchedule(rates=ExchangeRateTable()),
+        tool_middlewares=tool_middlewares,
     )
     trade_factory = TradeAgentFactory(
         settings, place_order, query_order, cancel_order, bus, circuit_registry, throttle,
+        tool_middlewares=tool_middlewares,
     )
     # 偏好选取器：主 Agent 注入与子 Agent 注入共用同一实例，口径不会两头漂。
     # 用带缓存的 embedder：重复的偏好 statement 不会每轮重复 embed。
@@ -259,6 +280,7 @@ async def build_container() -> Container:
         settings, search_factory, trade_factory, bus, preference_store, circuit_registry, throttle,
         sequencing=sequencing_tracker,
         loop_detector=loop_detector,
+        order_provenance=order_provenance_tracker,
         preference_selector=preference_selector,
     )
     sessions = SessionRegistry(main_factory, session_store)
