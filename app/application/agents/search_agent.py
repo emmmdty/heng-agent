@@ -4,6 +4,8 @@
 跨境商品检索专家。基于 AgentScope 2.0 Agent：
     工具集：product_search_tool（embedding+rerank 二阶段召回）
           category_insight_tool（品类洞察 RAG，选购常识）
+          quote_basket_tool（多件组合到手价）
+          optimize_basket_tool（预算内的最优组合）
           web_search_tool（可选，跨境政策兜底）
 
 对外通过 task_dispatch 工具被 MainAgent 调度（SubAgent as Tool 模式）。
@@ -19,6 +21,7 @@ from agentscope.tool import FunctionTool, Toolkit
 from app.application.agents.context_policy import build_context_config
 from app.application.prompts.loader import load_prompts
 from app.application.tools.category_insight_tool import build_category_insight_tool
+from app.application.tools.optimize_basket_tool import build_optimize_basket_tool
 from app.application.tools.product_search_tool import build_product_search_tool
 from app.application.tools.quote_basket_tool import build_quote_basket_tool
 from app.application.tools.web_search_tool import build_web_search_tool
@@ -81,6 +84,13 @@ class SearchAgentFactory:
             # 缺了它模型只能自行相加，评测 compare-two 实测会算错。
             FunctionTool(
                 build_quote_basket_tool(self._product_repo, self._tariff, self._bus),
+                is_read_only=True,
+                middlewares=self._resilience(),
+            ),
+            # 预算内的最优组合：补上"选哪几件"这一段。缺了它，买家给了预算时
+            # 模型只能自己拼、自己减，"还剩多少""省多少"没有任何工具出处。
+            FunctionTool(
+                build_optimize_basket_tool(self._product_repo, self._tariff, self._bus),
                 is_read_only=True,
                 middlewares=self._resilience(),
             ),

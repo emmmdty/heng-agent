@@ -196,3 +196,19 @@ class TestTaxableBaseCountsAsMoney:
         sources = collect_sources([{"taxable_base_major": 100.0, "subtotal_major": 130.0}])
         report = check_reply("差额是 30 元", sources)
         assert report.unsourced and report.unsourced[0].kind == KIND_DIFFERENCE
+
+    def test_budget_arithmetic_fields_enter_the_money_pool(self):
+        """组合优化回的预算算术同样是钱。
+
+        这三个字段（budget / remaining / saving）是十一期 optimize_basket_tool
+        专门为"预算还剩多少""一起买省多少"补的出处；名字不匹配金额字段时，
+        由它们派生的数会失去成因线索。
+        """
+        sources = collect_sources([{
+            "budget_major": 300.0,
+            "remaining_major": 12.0,
+            "combining_saving_major": 10.0,
+            "considered_combinations": 6,
+        }])
+        assert {300.0, 12.0, 10.0} <= set(sources.money)
+        assert 6 not in sources.money, "枚举次数不是金额"

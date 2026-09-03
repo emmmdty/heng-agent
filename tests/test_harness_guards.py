@@ -287,3 +287,50 @@ class TestBudgetChargingRobustness:
         init_budget(0)
         _charge_budget(type("R", (), {"usage": {"total_tokens": 999}})())
         assert get_budget() is None
+
+
+class TestPricingToolSchemas:
+    """计价工具的关键字段进 schema 断言。
+
+    这两个工具回的每个字段都是模型要抄进回复的数字，少一个模型就得自己算一个——
+    正是金额出处校验反复抓到的那类缺口（八期的 de_minimis 阈值、
+    十期的应税基数，都是"工具没回、模型自己编"）。
+    把字段名钉进断言表，改坏了当轮就有 [harness] 提示，而不是等评测跑完看分数。
+    """
+
+    def _fields(self, tool_name: str):
+        from app.application.harness.assertions import TOOL_REQUIRED_FIELDS
+
+        return TOOL_REQUIRED_FIELDS[tool_name]
+
+    async def test_optimize_basket_payload_satisfies_its_schema(self):
+        import json
+
+        from app.application.harness.assertions import check_schema
+        from app.application.tools.optimize_basket_tool import build_optimize_basket_tool
+        from app.domain.catalog.exchange_rate import ExchangeRateTable
+        from app.domain.shipping.tariff_schedule import TariffSchedule
+        from app.infrastructure.context import ShoppingContext, ShoppingContextSnapshot
+        from app.infrastructure.eventbus import TradeEventBus
+        from app.infrastructure.persistence.in_memory_repositories import (
+            InMemoryProductRepository,
+        )
+
+        tool = build_optimize_basket_tool(
+            InMemoryProductRepository(), TariffSchedule(rates=ExchangeRateTable()),
+            TradeEventBus(),
+        )
+        token = ShoppingContext.set(ShoppingContextSnapshot(
+            shopping_session_id="s-schema", buyer_id="b1", locale="zh-CN", currency="CNY",
+        ))
+        try:
+            chunk = await tool(
+                needs=[{"need": "露营灯", "product_ids": ["P1008"]}], ship_to="CN",
+            )
+        finally:
+            ShoppingContext.reset(token)
+
+        payload = json.loads(chunk.content[0].text)
+        for field in self._fields("optimize_basket_tool"):
+            assert field in payload
+        assert not check_schema("optimize_basket_tool", chunk.content[0].text).failures

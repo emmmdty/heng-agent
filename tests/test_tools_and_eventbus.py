@@ -240,3 +240,61 @@ class TestToolDocsMatchTheRuleTable:
         source = inspect.getsource(module)
         for code in self._supported():
             assert f'"{code}"' in source, f"工具描述里没提到规则表支持的 {code}"
+
+    def test_optimize_basket_tool_lists_every_supported_destination(self):
+        import inspect
+
+        from app.application.tools import optimize_basket_tool as module
+
+        source = inspect.getsource(module)
+        for code in self._supported():
+            assert f'"{code}"' in source, f"工具描述里没提到规则表支持的 {code}"
+
+
+class TestSearchToolsAreActuallyWired:
+    """工具写完了但没挂进 toolkit，是一类**零告警**的故障。
+
+    七期栽过同一个：BM25 索引写好了、单测全绿，但 `catalog_search` 里没接线，
+    检索行为与没写它时一模一样，谁也不会报错。所以把"注册了哪些工具"
+    也钉成判据——新增工具时忘了挂，这条会红。
+    """
+
+    def _factory(self):
+        from app.application.agents.search_agent import SearchAgentFactory
+        from app.application.usecases.catalog_search import CatalogSearchUseCase
+        from app.domain.catalog.exchange_rate import ExchangeRateTable
+        from app.domain.shipping.tariff_schedule import TariffSchedule
+        from app.infrastructure.resilience import CircuitBreakerRegistry
+        from app.infrastructure.settings import load_settings
+        from app.infrastructure.throttle import GatewayThrottle
+
+        settings = load_settings()
+        repo = InMemoryProductRepository()
+        return SearchAgentFactory(
+            settings=settings,
+            catalog_search=CatalogSearchUseCase(repo),
+            bus=TradeEventBus(),
+            knowledge_base=None,
+            circuit_registry=CircuitBreakerRegistry(),
+            throttle=GatewayThrottle(2, 0.0),
+            product_repo=repo,
+            tariff=TariffSchedule(rates=ExchangeRateTable()),
+        )
+
+    def test_business_tools_are_registered(self):
+        names = {tool.name for tool in self._factory().build_tools()}
+        assert {
+            "product_search_tool",
+            "category_insight_tool",
+            "quote_basket_tool",
+            "optimize_basket_tool",
+        } <= names
+
+    def test_read_only_tools_carry_resilience_middleware(self):
+        """新工具同样要挂超时+熔断：漏挂时它会成为唯一一个能把整轮拖死的工具。
+
+        读的是私有属性 `_middlewares`：AgentScope 没有公开的读取口，
+        而"有没有挂上"这件事只能在这里看见。
+        """
+        for tool in self._factory().build_tools():
+            assert tool._middlewares, f"{tool.name} 没挂韧性中间件"

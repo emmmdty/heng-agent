@@ -35,6 +35,10 @@ TOOL_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "create_order_tool": ("order_id", "status"),
     "query_order_tool": ("order_id", "status"),
     "cancel_order_tool": ("order_id", "status"),
+    # 计价两工具（十一期补进来）：它们回的每个字段都是模型要抄进回复的数字，
+    # 少一个模型就得自己算一个——这正是金额出处校验反复抓到的那类缺口。
+    "quote_basket_tool": ("landed_total_major", "freight_major"),
+    "optimize_basket_tool": ("selection", "landed_total_major", "uncovered_needs"),
 }
 
 # 工具名 → 必须在它之前调用过的工具

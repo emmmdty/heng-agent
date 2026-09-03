@@ -51,11 +51,12 @@ _ANY_NUMBER = re.compile(_NUMBER)
 # score/stock/hit_count 里凑出巧合的和。
 # 排除 *_rate：tariff_rate=0.075 名字里带 tariff 但装的是税率不是金额，
 # 放进加数池会编出 "0.075 + 198.15 ≈ 200" 这种荒唐成因。
-# `taxable`（十一期新增的应税基数）也是钱：它是"超出免税额度、实际计征的那部分"。
-# 不纳入的话，由它派生的差额只会被归成 unsourced，而"3.72 = 153.72 − 150"
-# 这条线索正是指向"工具该补哪个字段"的依据。
+# `taxable`（应税基数）、`budget`/`remaining`/`saving`（组合优化返回的预算算术）
+# 同样是钱。不纳入的话，由它们派生的数只会被归成 unsourced，
+# 而"3.72 = 153.72 − 150"这类线索正是指向"工具该补哪个字段"的依据。
 _MONEY_FIELD = re.compile(
-    r"(price|subtotal|freight|tariff|landed|amount|total|taxable)", re.IGNORECASE,
+    r"(price|subtotal|freight|tariff|landed|amount|total|taxable|budget|remaining|saving)",
+    re.IGNORECASE,
 )
 _RATE_FIELD = re.compile(r"rate", re.IGNORECASE)
 
