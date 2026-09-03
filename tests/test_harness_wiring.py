@@ -117,3 +117,41 @@ class TestL3DoesNotMangleProductCopy:
             if hit:
                 flagged.append(product.product_id)
         assert not flagged, f"L3 误伤了这些商品的卡片文案：{flagged}"
+
+
+class TestWriteToolsAreWhitelisted:
+    """每一个**非只读**工具都必须在权限白名单里。
+
+    2.0 的 DEFAULT 权限模式下，非只读工具会触发 RequireUserConfirmEvent 挂起等确认。
+    本仓的确认语义在对话层（MainAgent 先出确认卡、买家确认后才执行），
+    工具层不该再挂一次——漏进白名单的后果不是"多问一句"，是**那一轮直接卡住**。
+
+    与 L4 工具名清单、Harness 接线是同一类：清单与实现脱钩，
+    而脱钩之后没有任何东西会报警。
+    """
+
+    def test_every_write_tool_is_allowed(self):
+        from app.application.agents.permissions import _AUTO_ALLOWED_TOOLS
+
+        search, trade = _factories()
+        write_tools = [
+            tool.name
+            for tool in [*search.build_tools(), *trade.build_tools()]
+            if not tool.is_read_only
+        ]
+        assert write_tools, "一个写工具都没有？那多半是 is_read_only 标错了"
+        missing = sorted(set(write_tools) - set(_AUTO_ALLOWED_TOOLS))
+        assert not missing, f"这些写工具不在白名单里，调用时会挂起等确认：{missing}"
+
+    def test_read_only_tools_are_not_whitelisted_by_accident(self):
+        """只读工具不需要进白名单——放进去没有坏处，但会让"白名单里有什么"
+        这件事失去信息量：它本该是一份"哪些写操作被豁免了确认"的清单。"""
+        from app.application.agents.permissions import _AUTO_ALLOWED_TOOLS
+
+        search, trade = _factories()
+        read_only = {
+            tool.name
+            for tool in [*search.build_tools(), *trade.build_tools()]
+            if tool.is_read_only
+        }
+        assert not (read_only & set(_AUTO_ALLOWED_TOOLS))
