@@ -273,6 +273,21 @@ def merge_results(
     return [by_id[case["id"]] for case in cases if case["id"] in by_id]
 
 
+def rubric_fingerprint(case: dict) -> str:
+    """一条用例判据的指纹（含 queries——问法变了，衡量的也就变了）。
+
+    改判据不改指纹的话，跑测方差会把"两把不同尺子量出来的分数"混在一起，
+    算出一个看着很大的波动，然后把真实的回归淹没在里面。
+    """
+    import hashlib
+
+    payload = json.dumps(
+        {"queries": case.get("queries"), "rubric": case.get("rubric")},
+        ensure_ascii=False, sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:8]
+
+
 def collect_recall_strategies(data_dir: str, session_id: str) -> list[str]:
     """这条用例实际走了哪些召回档位（按出现顺序去重）。
 
@@ -387,6 +402,10 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
         "description": case["description"],
         # 报告要写明这条是在什么故障下跑的，否则"检索档位不对"会被归因到检索参数
         "faults": faults,
+        # 判据指纹：**rubric 本身就是配置的一部分**。改了判据再跟旧读数比，
+        # 比的是两把不同的尺子——跑测方差工具（scripts/eval/variance.py）
+        # 靠它把"同一把尺子量出来的分数"才放在一起算。
+        "rubric_fingerprint": rubric_fingerprint(case),
         "score": score,
         "p0_pass": p0_all_pass,
         "verdict": "PASS" if p0_all_pass and score >= 0.7 else "FAIL",
