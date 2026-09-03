@@ -154,3 +154,34 @@ class TestBaseUrlOverride:
         assert module.BASE_URL == "http://127.0.0.1:8011"
         monkeypatch.delenv("EVAL_BASE_URL", raising=False)
         importlib.reload(module)
+
+
+class TestRequiresMustComeFirst:
+    """`requires` 指向的用例必须排在前面。
+
+    用例按**文件顺序**执行，`requires` 只被续跑用来补前置——没人管顺序。
+    前置排在后面时，这条用例评的是一个还没成立的前提，**而分数照样出得来**。
+    （十六期写 memory-forget 时就把 setup 放在了后面，靠这条判据抓出来。）
+    """
+
+    def test_forward_reference_is_reported(self):
+        from scripts.eval.audit_cases import _dangling_requires
+
+        cases = [_case("uses-it", requires=["setup"]), _case("setup")]
+        assert _dangling_requires(cases) == [("uses-it", ["setup"])]
+
+    def test_backward_reference_passes(self):
+        from scripts.eval.audit_cases import _dangling_requires
+
+        assert _dangling_requires([_case("setup"), _case("uses-it", requires=["setup"])]) == []
+
+    def test_real_cases_file_orders_prerequisites_first(self):
+        from pathlib import Path
+
+        import yaml
+
+        from scripts.eval.audit_cases import _dangling_requires
+
+        path = Path(__file__).resolve().parents[1] / "eval" / "cases.yaml"
+        cases = yaml.safe_load(path.read_text(encoding="utf-8"))["cases"]
+        assert _dangling_requires(cases) == []

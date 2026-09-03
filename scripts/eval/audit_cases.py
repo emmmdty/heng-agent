@@ -125,17 +125,26 @@ def missing_pins(matched_ids: set[str], pinned: set[str]) -> set[str]:
 
 
 def _dangling_requires(cases: list[dict]) -> list[tuple[str, list[str]]]:
-    """`requires` 必须指向真实存在的用例 id。
+    """`requires` 必须指向真实存在、**且排在前面**的用例。
 
-    拼错一个 id 的后果是续跑时前置补不回来——而那是几十分钟之后、
-    且分数看上去完全正常的时候才暴露的。静态查出来成本是零。
+    两种错各有各的坑：
+      - 指向不存在的 id：续跑时前置补不回来，而那是几十分钟之后、
+        分数看上去还很正常的时候才暴露的；
+      - 指向排在后面的用例：用例按**文件顺序**执行，前置会在它之后才跑，
+        于是这一条评的是一个不成立的前提——**而分数照样出得来**。
+        `requires` 只被续跑用来补前置，没人管顺序，所以顺序得在这里管。
+
+    静态查出来成本是零。
     """
-    known = {case["id"] for case in cases}
+    order = {case["id"]: index for index, case in enumerate(cases)}
     found = []
-    for case in cases:
-        missing = [req for req in (case.get("requires") or []) if req not in known]
-        if missing:
-            found.append((case["id"], sorted(missing)))
+    for index, case in enumerate(cases):
+        bad = [
+            req for req in (case.get("requires") or [])
+            if req not in order or order[req] > index
+        ]
+        if bad:
+            found.append((case["id"], sorted(bad)))
     return found
 
 
@@ -218,8 +227,9 @@ async def main() -> int:
               f"而这要等到跑测时才发现（一轮 60-90 分钟）\n")
 
     for case_id, missing in dangling:
-        print(f"[{case_id}] requires 指向了不存在的用例 {missing}——"
-              f"续跑时前置补不回来，而那是几十分钟后、分数看上去还很正常的时候才暴露\n")
+        print(f"[{case_id}] requires 指向了不存在或排在它后面的用例 {missing}——"
+              f"前者让续跑补不回前置，后者让这条用例评一个还没成立的前提，"
+              f"而两种情况下分数都照样出得来\n")
 
     print("修法建议：在 query 里补足消歧信息（如带上品类词或型号），"
           "而不是放宽 rubric——放宽会让用例失去检验能力。")
