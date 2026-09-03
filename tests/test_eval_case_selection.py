@@ -53,3 +53,54 @@ class TestSelectCases:
             select_cases(CASES, tag="smok")
         with pytest.raises(SystemExit, match="没有用例"):
             select_cases(CASES, only="zzz")
+
+
+class TestOnlyAcceptsSeveralIds:
+    """`--only` 支持逗号分隔。
+
+    定向验证一处改动往往要看两三条相关用例（十六期验 quote_basket 时就是），
+    分几次跑意味着几份报告、几次前置检查，也没法一眼看到对比。
+    """
+
+    def _cases(self):
+        return [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+
+    def test_single_id_still_works(self):
+        from scripts.eval_regression import select_cases
+
+        assert [c["id"] for c in select_cases(self._cases(), only="b")] == ["b"]
+
+    def test_comma_separated_ids(self):
+        from scripts.eval_regression import select_cases
+
+        assert [c["id"] for c in select_cases(self._cases(), only="c,a")] == ["a", "c"]
+
+    def test_order_follows_the_file_not_the_argument(self):
+        """顺序按用例集来，不按参数——用例之间有顺序依赖（requires），
+        让命令行决定执行顺序会把那层保证破坏掉。"""
+        from scripts.eval_regression import select_cases
+
+        assert [c["id"] for c in select_cases(self._cases(), only="c,b,a")] == ["a", "b", "c"]
+
+    def test_whitespace_is_tolerated(self):
+        from scripts.eval_regression import select_cases
+
+        assert [c["id"] for c in select_cases(self._cases(), only=" a , c ")] == ["a", "c"]
+
+    def test_unknown_id_still_reports_what_is_available(self):
+        import pytest
+
+        from scripts.eval_regression import select_cases
+
+        with pytest.raises(SystemExit, match="可用用例"):
+            select_cases(self._cases(), only="zzz-nope")
+
+    def test_partially_unknown_ids_run_the_known_ones(self):
+        """一个拼错不该让整轮跑不起来：已知的照跑，报告里看得出少了谁。
+
+        （反过来做成硬失败也讲得通，但那会让"跑三条其中一条改了名"
+        这种常见情况变成一次白等。）
+        """
+        from scripts.eval_regression import select_cases
+
+        assert [c["id"] for c in select_cases(self._cases(), only="a,zzz-nope")] == ["a"]

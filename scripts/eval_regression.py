@@ -427,7 +427,10 @@ def select_cases(cases: list[dict], only: str | None = None, tag: str | None = N
     """
     selected = cases
     if only is not None:
-        selected = [c for c in selected if c["id"] == only]
+        # 逗号分隔可以一次跑几条：定向验证一处改动往往要看两三条相关用例，
+        # 分几次跑意味着几份报告、几次 /health 前置检查，也没法一眼看到对比
+        wanted = [item.strip() for item in only.split(",") if item.strip()]
+        selected = [c for c in selected if c["id"] in wanted]
     elif tag is not None and tag != _TAG_ALL:
         selected = [c for c in selected if tag in (c.get("tags") or [])]
 
@@ -472,7 +475,9 @@ def _guard_stale_service(health: dict, allow: bool) -> None:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", default=str(PROJECT_ROOT / "eval" / "cases.yaml"))
-    parser.add_argument("--only", default=None, help="只跑指定 case id")
+    parser.add_argument(
+        "--only", default=None, help="只跑指定 case id（逗号分隔可跑多条）",
+    )
     parser.add_argument(
         "--tag",
         default=None,
