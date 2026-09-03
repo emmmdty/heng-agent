@@ -14,6 +14,7 @@ Presentation 层按 shopping_session_id 订阅后推送给前端 WebSocket。
     model.fallback      主模型限流重试用尽，已回退到备用模型（四期）
     cache.hit           语义缓存命中，本轮未调模型（四期）
     number.unsourced    回复里出现了没有工具出处的金额（五期：金额出处校验）
+    arith.inconsistent  回复里写出来的算式等号两边对不上（十九期：算式自洽）
     task.queued         意图已入队，等待 worker 领取（四期）
     task.started        worker 已开始处理（四期）
     final.result        最终回复
@@ -38,6 +39,7 @@ EVENT_TYPES = (
     "model.fallback",
     "cache.hit",
     "number.unsourced",
+    "arith.inconsistent",
     "task.queued",
     "task.started",
     "final.result",

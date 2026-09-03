@@ -35,6 +35,8 @@ from agentscope.event import (
 from agentscope.message import Msg, UserMsg
 
 from app.application.agents.main_agent import SessionRegistry
+from app.application.harness.arithmetic_check import check_arithmetic
+from app.application.harness.confirmation import ConfirmationTracker
 from app.application.harness.drift_detector import DriftDetector
 from app.application.harness.loop_detector import LoopDetector
 from app.application.harness.number_provenance import SessionSources, check_reply
@@ -227,6 +229,9 @@ class MainAgentOrchestrator:
             events = self._drain_trace(session_id, trace)
             if not cache_hit:
                 self._check_number_provenance(intent, final_text, events)
+                # 算式自洽与金额出处并列：一个管"数字从哪来"，一个管"过程算不算得通"。
+                # 缓存命中的轮次同样跳过——那是上一次已校验过的回复在重放。
+                self._check_arithmetic(intent, final_text, events)
             await self._record_conversation(
                 intent, final_text, int((time.monotonic() - started_at) * 1000), events,
             )
@@ -352,6 +357,37 @@ class MainAgentOrchestrator:
         self._bus.publish(session_id, "number.unsourced", payload)
         events.append(
             ConversationEventRecord(session_id=session_id, type="number.unsourced", payload=payload),
+        )
+
+    def _check_arithmetic(
+        self,
+        intent: SubmitIntentInput,
+        final_text: str,
+        events: list[ConversationEventRecord],
+    ) -> None:
+        """轮末算式自洽校验：回复里写出来的 `A × B% = C` 得算得通。
+
+        与金额出处校验是**互补的两条**，不能合并：出处管"数字从哪来"，
+        这条管"写出来的过程算不算得通"。full3 实测那次，
+        `886.34 × 7.5% = 6.48` 里三个数**都有工具出处**，出处校验完全无感。
+
+        同样只告警不改写：本轮已结束，改写来不及；价值在于被看见。
+        """
+        report = check_arithmetic(final_text)
+        if report.ok:
+            return
+        session_id = intent.shopping_session_id
+        payload = {"message": "回复中的算式等号两边对不上", **report.to_dict()}
+        logger.warning(
+            "算式自洽校验命中（会话 %s）：%s",
+            session_id,
+            [(item.raw, item.expected) for item in report.problems],
+        )
+        self._bus.publish(session_id, "arith.inconsistent", payload)
+        events.append(
+            ConversationEventRecord(
+                session_id=session_id, type="arith.inconsistent", payload=payload,
+            ),
         )
 
     async def _record_conversation(
