@@ -109,3 +109,33 @@ class TestWiring:
         source = inspect.getsource(orchestrator)
         block = source[source.index("if not cache_hit:"):]
         assert block.index("_check_arithmetic") < block.index("_record_conversation")
+
+
+class TestAgainstRealReplies:
+    """拿真实回复验一遍：既看抓得住，也看误报率（同验 L3/L4 的方法）。
+
+    实测（346 条历史回复）：抽出 4 个显式算式、命中 2 处不自洽、**零误报**。
+    两处都是真错，其中一处来自 judge 判 PASS 的用例——
+    **确定性判据当场抓到了 judge 漏掉的错**，这正是"能拿回确定性判据的
+    就别留给 judge"这条主线的又一个实证。
+    """
+
+    def test_the_two_real_defects(self):
+        """两处实测原文。写成测试是为了将来改容差时能立刻看出会不会放过它们。"""
+        for text, expected in (
+            ("关税 1,199 × 12% ≈ ¥3.48", 143.88),
+            ("€384.49 × 12% = €28.14", 46.1388),
+        ):
+            report = check_arithmetic(text)
+            assert not report.ok, text
+            assert report.problems[0].expected == pytest.approx(expected, abs=0.01)
+
+    def test_narrow_by_design(self):
+        """判据刻意窄：只认显式写出来的百分比乘法。
+
+        346 条回复里只抽出 4 个算式——**漏报很多，但误报为零**。
+        这与金额出处校验"给出的是下界"是同一条纪律：
+        判据的可信度比覆盖率重要，误报会让人不再看它。
+        """
+        prose = "到手价约为原价的九成，运费另计，关税按超出部分收"
+        assert check_arithmetic(prose).equations == 0
