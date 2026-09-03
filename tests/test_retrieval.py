@@ -285,3 +285,62 @@ class TestUnsupportedDestination:
         )
         assert "ship_to_unsupported" not in result
         assert result["hits"][0]["landed_price"]["landed_total_major"] > 0
+
+
+class TestPriceCapLooksAtAllSkus:
+    """价格上限按**最便宜的规格**判，不是按主规格。
+
+    今天还不会出事：库里只有两件商品的规格之间有差价（P1001 / P1004），
+    而它们的主规格恰好就是最便宜的那个。但这是个陷阱——
+    以后谁加一件"主规格贵、另有便宜规格"的商品，符合预算的那个规格会被
+    连着整件商品一起挡掉，模型看到的是 `over_price_cap`，
+    于是把"库里有你买得起的规格"答成"没有符合预算的商品"。
+
+    这类缺陷的特点是**加一条数据就会突然出现**，而那时没有任何判据会响。
+    """
+
+    def _product_with_cheap_variant(self):
+        from app.domain.catalog.money import Money
+        from app.domain.catalog.product import Product, ProductHighlight
+        from app.domain.catalog.sku import Sku
+
+        return Product(
+            product_id="PX01",
+            title="TestBrand 双规格测试品",
+            brand="TestBrand",
+            category="旅行装备",
+            origin_country="CN",
+            description="主规格贵、另有便宜规格",
+            highlights=[ProductHighlight(label="材质", detail="测试")],
+            ships_to=["CN"],
+            skus=[
+                Sku(sku_id="PX01-S1", spec="豪华版", price=Money.from_major_units(500, "CNY"), stock=5),
+                Sku(sku_id="PX01-S2", spec="基础版", price=Money.from_major_units(150, "CNY"), stock=5),
+            ],
+        )
+
+    async def _search(self, price_max):
+        from app.application.usecases.catalog_search import CatalogSearchUseCase
+        from app.domain.catalog.product_search_spec import ProductSearchSpec
+        from app.infrastructure.persistence.in_memory_repositories import (
+            InMemoryProductRepository,
+        )
+
+        repo = InMemoryProductRepository([self._product_with_cheap_variant()])
+        usecase = CatalogSearchUseCase(repo)
+        return await usecase.execute(
+            ProductSearchSpec(normalized_query="双规格测试品", price_max_major=price_max),
+        )
+
+    async def test_cheap_variant_keeps_the_product_in(self):
+        result = await self._search(price_max=200)
+        assert [h["product_id"] for h in result["hits"]] == ["PX01"], (
+            "基础版 150 元在预算内，整件商品不该被挡掉"
+        )
+
+    async def test_all_variants_over_cap_is_still_filtered(self):
+        """反向也要成立：所有规格都超预算时照旧挡掉并给出 reason，
+        否则这条修改就变成了"价格上限失效"。"""
+        result = await self._search(price_max=100)
+        assert not result["hits"]
+        assert result["filtered_out"][0]["reason"] == "over_price_cap"

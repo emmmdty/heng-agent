@@ -298,10 +298,23 @@ class CatalogSearchUseCase:
         }
 
     def _within_price_cap(self, product: Product, spec: ProductSearchSpec) -> bool:
+        """按**最便宜的规格**判，不是按主规格。
+
+        按主规格判会把"主规格贵、另有便宜规格"的商品整件挡掉，
+        模型看到 `over_price_cap`，于是把"库里有你买得起的规格"
+        答成"没有符合预算的商品"。
+
+        今天的商品库里还碰不到（只有两件商品规格间有差价，且主规格恰好最便宜），
+        但那是数据的偶然——加一条数据就会突然出事，而那时没有任何判据会响。
+        商品卡本来就逐个列出每个 SKU 的价格与到手价，模型挑得出符合预算的那个。
+        """
         if spec.price_max_major is None:
             return True
-        primary_in_target = self._tariff.rates.convert(product.primary_sku().price, spec.target_currency)
-        return primary_in_target.to_major_units() <= spec.price_max_major
+        cheapest = min(
+            self._tariff.rates.convert(sku.price, spec.target_currency).to_major_units()
+            for sku in product.skus
+        )
+        return cheapest <= spec.price_max_major
 
     # ---- 一阶段（混合）：两路召回 + RRF 融合 ----
 
