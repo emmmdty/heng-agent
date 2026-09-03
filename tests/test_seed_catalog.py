@@ -77,3 +77,31 @@ class TestCatalogIsBigEnoughToDiscriminate:
         """六期把商品库从 10 扩到 60，是因为 10 个 SPU 下 Recall@10 恒等于 1、
         指标没有区分度。缩回去等于让整套召回评测失去意义。"""
         assert len(_products()) >= 60
+
+
+class TestAbsentFeaturesAreExplicit:
+    """"没有某个功能"要写成显式属性，不能让模型去推断。
+
+    full 轮实测：Agent 把 AeroHush Lite（半入耳、只有通话降噪）说成
+    "一款轻量级主动降噪耳机"——P0 违规。而商品卡上**没有任何字段说它没有 ANC**，
+    只有一句"通话降噪"（那是麦克风侧的），于是模型自己补了一个。
+
+    这与 `filtered_out`（库里没有 vs 有但被挡掉）、`combine_hint`（不可相加）
+    是同一条：**模型只能用你给它的东西作答，给不了就只能编。**
+    缺失的信息要显式化——尤其是当命名相近、容易误认的时候。
+    """
+
+    def test_non_anc_headphone_says_so(self):
+        products = {p.product_id: p for p in _products()}
+        lite = products["P1022"]
+        blob = lite.description + " ".join(f"{h.label}{h.detail}" for h in lite.highlights)
+        assert "无主动降噪" in blob, "半入耳款必须显式声明没有 ANC，否则会被说成降噪耳机"
+
+    def test_anc_products_still_say_they_have_it(self):
+        """反向：真有 ANC 的两款不能因为这条改动被写糊涂了。"""
+        products = {p.product_id: p for p in _products()}
+        for pid in ("P1004", "P1023"):
+            blob = products[pid].description + " ".join(
+                f"{h.label}{h.detail}" for h in products[pid].highlights
+            )
+            assert "主动降噪" in blob and "无主动降噪" not in blob
