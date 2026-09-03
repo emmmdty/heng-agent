@@ -258,6 +258,35 @@ def merge_results(
     return [by_id[case["id"]] for case in cases if case["id"] in by_id]
 
 
+def collect_recall_strategies(data_dir: str, session_id: str) -> list[str]:
+    """这条用例实际走了哪些召回档位（按出现顺序去重）。
+
+    为什么值得记：配置行只答得了"向量路可不可达"，答不了"**这一条**是不是降级跑的"。
+    一条用例分数低时，第一个要排除的就是"它跑在 keyword_2gram 上"——
+    没有这个字段，那次排查只能靠翻流水。
+
+    读不到流水（换了 DATA_DIR、还没落盘）就返回空列表，不影响报告生成：
+    这是给人看的归因线索，不是判据。
+    """
+    if not data_dir or not session_id:
+        return []
+    path = Path(data_dir) / "conversations" / f"{session_id}.jsonl"
+    if not path.is_file():
+        return []
+    seen: list[str] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = (json.loads(line).get("payload") or {})
+            strategy = payload.get("recall_strategy") if isinstance(payload, dict) else None
+            if strategy and strategy not in seen:
+                seen.append(strategy)
+    except (OSError, ValueError):
+        return []
+    return seen
+
+
 def declared_fault_components(cases: list[dict]) -> set[str]:
     """本轮选中的用例一共声明了哪些故障组件。"""
     components: set[str] = set()
@@ -374,7 +403,8 @@ def render_report(results: list[dict], run_line: str = "") -> str:
         )
     lines.append("")
     for r in results:
-        lines.append(f"## {r['id']}（{r['verdict']}，{r['score']}）")
+        strategies = "/".join(r.get("recall_strategies") or []) or "未记录"
+        lines.append(f"## {r['id']}（{r['verdict']}，{r['score']}，召回 {strategies}）")
         for level in ("p0", "p1", "p2"):
             for item in r["judged"].get(level, []):
                 mark = "PASS" if item.get("pass") else "FAIL"
@@ -569,6 +599,14 @@ async def main() -> None:
             write_partial(partial, run_line, merge_results(cases, previous, fresh))
 
     results = merge_results(cases, previous, fresh)
+
+    # 补上每条用例实际走的召回档位：分数低时第一个要排除的就是"它降级跑的"
+    data_dir = str(health.get("data_dir") or "")
+    for result in results:
+        result["recall_strategies"] = collect_recall_strategies(
+            data_dir, result.get("session_id") or "",
+        )
+
     report = render_report(results, run_line)
     report_path = PROJECT_ROOT / "eval" / f"report-{stamp}.md"
     report_path.write_text(report, encoding="utf-8")

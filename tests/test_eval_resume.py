@@ -185,3 +185,48 @@ class TestRequiresMustComeFirst:
         path = Path(__file__).resolve().parents[1] / "eval" / "cases.yaml"
         cases = yaml.safe_load(path.read_text(encoding="utf-8"))["cases"]
         assert _dangling_requires(cases) == []
+
+
+class TestRecallStrategyAttribution:
+    """报告要记下每条用例实际走的召回档位。
+
+    配置行只答得了"向量路可不可达"，答不了"**这一条**是不是降级跑的"。
+    一条用例分数低时，第一个要排除的就是"它跑在 keyword_2gram 上"——
+    没有这个字段，那次排查只能靠翻流水。
+    """
+
+    def _trace(self, tmp_path, session_id, strategies):
+        import json
+
+        conv = tmp_path / "conversations"
+        conv.mkdir(exist_ok=True)
+        lines = [json.dumps({"kind": "session"}, ensure_ascii=False)]
+        for strategy in strategies:
+            lines.append(json.dumps(
+                {"type": "tool.result", "payload": {"recall_strategy": strategy}},
+                ensure_ascii=False,
+            ))
+        (conv / f"{session_id}.jsonl").write_text("\n".join(lines), encoding="utf-8")
+
+    def test_collects_in_order_without_duplicates(self, tmp_path):
+        from scripts.eval_regression import collect_recall_strategies
+
+        self._trace(tmp_path, "s1", ["bm25_only", "bm25_only", "keyword_2gram"])
+        assert collect_recall_strategies(str(tmp_path), "s1") == ["bm25_only", "keyword_2gram"]
+
+    def test_missing_trace_is_not_an_error(self, tmp_path):
+        """这是给人看的归因线索，不是判据——读不到就空着，不能因此让报告生不出来。"""
+        from scripts.eval_regression import collect_recall_strategies
+
+        assert collect_recall_strategies(str(tmp_path), "nope") == []
+        assert collect_recall_strategies("", "s1") == []
+        assert collect_recall_strategies(str(tmp_path), "") == []
+
+    def test_corrupt_trace_is_tolerated(self, tmp_path):
+        conv = tmp_path / "conversations"
+        conv.mkdir()
+        (conv / "s2.jsonl").write_text("{不是 JSON\n", encoding="utf-8")
+
+        from scripts.eval_regression import collect_recall_strategies
+
+        assert collect_recall_strategies(str(tmp_path), "s2") == []
