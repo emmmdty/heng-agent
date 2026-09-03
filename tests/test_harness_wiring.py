@@ -155,3 +155,37 @@ class TestWriteToolsAreWhitelisted:
             if tool.is_read_only
         }
         assert not (read_only & set(_AUTO_ALLOWED_TOOLS))
+
+
+class TestPromptListsEveryTool:
+    """注册了的工具必须在系统提示词里出现。
+
+    "工具存在 ≠ 模型会调"这句话在本仓被反复验证过：
+    十一期加了 optimize_basket_tool 之后，悬了三期才由 smoke 轮给出答案。
+    而**提示词里没写**是这句话最彻底的一种形式——模型压根不知道有这个工具，
+    再好的工具也等于没做，且没有任何东西会报警（同踩坑 37）。
+
+    只检查"名字出现过"，不检查怎么写的：怎么描述是提示词工程的事，
+    判据只管"有没有把它介绍给模型"。
+    """
+
+    def _prompt(self) -> str:
+        from app.application.prompts.loader import load_prompts
+
+        prompts = load_prompts()
+        return prompts["main_agent"]["system_prompt"]
+
+    def test_business_tools_appear_in_the_main_prompt(self):
+        search, trade = _factories()
+        prompt = self._prompt()
+        missing = [
+            tool.name for tool in [*search.build_tools(), *trade.build_tools()]
+            if tool.name not in prompt
+        ]
+        assert not missing, f"这些工具没写进主 Agent 提示词，模型不会知道它们存在：{missing}"
+
+    def test_memory_and_dispatch_tools_appear_too(self):
+        """记忆与派发工具挂在主 Agent 自己身上，不在两个工厂里，单独钉。"""
+        prompt = self._prompt()
+        for name in ("task_dispatch", "remember_preference_tool", "forget_preference_tool"):
+            assert name in prompt, f"{name} 没写进提示词"
