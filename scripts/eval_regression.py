@@ -44,6 +44,10 @@ from app.infrastructure.transient import is_transient_error  # noqa: E402
 # 被测服务地址。默认 8000；`EVAL_BASE_URL` 可指到别的端口——
 # 起第二个实例做 --dry-run 体检（或服务本来就不在 8000）时需要它。
 BASE_URL = os.environ.get("EVAL_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+
+# 单轮意图的等待上限。推理模型 + 多工具调用的一轮可能要几分钟，
+# 但超过这个数基本就是卡住了——继续等只是把整轮的墙钟时间拖长。
+_INTENT_TIMEOUT_SECONDS = 600
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # judge 不经模型层闸门（直连 httpx），自己退避重试，避免主模型限流时整轮评测报废
@@ -349,7 +353,7 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
                 "currency": "CNY",
                 "raw_query": query,
             },
-            timeout=600,
+            timeout=_INTENT_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         final_text = response.json()["final_text"]
@@ -585,7 +589,14 @@ async def main() -> None:
             except Exception as err:  # noqa: BLE001 —— 单条失败不中断整轮回归
                 # 异常必须当场打出来：只塞进 transcript 的话，13 条全错也要等整轮
                 # 跑完才知道原因，而每一条都真金白银烧了网关配额。
-                print(f"   [异常] {type(err).__name__}: {str(err)[:400]}", flush=True)
+                # httpx 的超时类异常 str() 是空的，只打 str 会得到 "ReadTimeout: "
+                # 这种零信息的行——排查时既不知道卡在哪一轮，也不知道等了多久。
+                detail = str(err) or repr(err)
+                print(
+                    f"   [异常] {type(err).__name__}: {detail[:400]}"
+                    f"（第 {len(case['queries'])} 轮以内，单轮上限 {_INTENT_TIMEOUT_SECONDS}s）",
+                    flush=True,
+                )
                 result = {
                     "id": case["id"], "session_id": None,
                     "description": case["description"],
