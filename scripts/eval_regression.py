@@ -94,29 +94,42 @@ def _landed_price_rules() -> list[str]:
 
     与金额出处校验互补：出处校验管"数字有没有来源"，这段管"数字对不对"。
     """
+    from app.domain.catalog.exchange_rate import ExchangeRateTable
     from app.domain.shipping.tariff_schedule import (
         _BASE_FREIGHT_CNY_MINOR,
-        _DE_MINIMIS_CNY_MINOR,
         _TARIFF_RATES,
+        TariffSchedule,
     )
+
+    # 免税额度改走公开方法（十一期）：原先直接 import `_DE_MINIMIS_CNY_MINOR`，
+    # 规则表一改存储结构这里就断——事实基准依赖领域层私有常量本身就是缝。
+    tariff = TariffSchedule(rates=ExchangeRateTable())
 
     lines = ["到手价规则表（工具按此计算；Agent 报的运费/关税/免税额度必须与本表推出的结果一致）：", ""]
     lines.append("    到手价 = 商品小计 + 运费 + 关税")
     lines.append("    关税   = **超出免税额度的部分** × 品类费率（小计未超额度则为 0）")
+    lines.append("             即：应税基数 = max(0, 小计 − 免税额度)，关税 = 应税基数 × 费率。")
+    lines.append("             写成「整单金额 × 费率」是错的，哪怕最终数字碰巧对得上")
     lines.append("    运费   = 基础运费 × (1 + 0.6 × (总件数 - 1))，即首件全价 + 每件续件 60%；")
     lines.append("             多个商品合并一单时按**整批总件数**算一次，不是各单品运费相加")
     lines.append("")
-    lines.append("| 目的国 | 基础运费(CNY) | 免税额度(CNY) | 品类关税费率 |")
-    lines.append("|---|---|---|---|")
+    lines.append("| 目的国 | 基础运费(CNY) | 免税额度(原生口径) | 免税额度(CNY) | 品类关税费率 |")
+    lines.append("|---|---|---|---|---|")
     for dest in sorted(_TARIFF_RATES):
         freight = _BASE_FREIGHT_CNY_MINOR[dest] / 100
-        de_minimis = _DE_MINIMIS_CNY_MINOR[dest] / 100
+        # 两个口径都给：额度本来是各国用自己货币定义的（US 800 USD、EU 150 EUR），
+        # 只给 CNY 的话，Agent 跨币种表述"美国免税门槛 $800"时 judge 无从核对。
+        native = tariff.de_minimis_native(dest)
+        de_minimis = tariff.de_minimis(dest, "CNY").to_major_units()
         # 精度不能丢：US 旅行装备是 7.5%，`:.0%` 会显示成 8%——
         # judge 拿着 8% 去核对，正确的关税反而会被判错。
         rates_text = "、".join(
             f"{cat} {rate * 100:g}%" for cat, rate in _TARIFF_RATES[dest].items()
         ).replace("*", "其他")
-        lines.append(f"| {dest} | {freight:g} | {de_minimis:g} | {rates_text} |")
+        lines.append(
+            f"| {dest} | {freight:g} | {native.to_major_units():g} {native.currency} "
+            f"| {de_minimis:g} | {rates_text} |",
+        )
     lines.append("")
     lines.append(
         "注：免税额度按**整批小计**判定（不是逐件）；混合品类超额时，"

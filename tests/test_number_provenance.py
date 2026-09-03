@@ -6,6 +6,7 @@
 不是构造出来的理想输入——这个校验器的价值取决于它在真实回复上的误报率。
 """
 from app.application.harness.number_provenance import (
+    KIND_DIFFERENCE,
     check_reply,
     collect_sources,
 )
@@ -173,3 +174,25 @@ class TestClassificationCost:
         target = self._POOL[-1] + self._POOL[-2]
         report = check_reply(f"一起买 ¥{target:.2f}。", sources)
         assert report.unsourced[0].kind == "suspected_sum", "剪枝不能把真正的两数之和剪掉"
+
+
+class TestTaxableBaseCountsAsMoney:
+    """应税基数字段要进金额池，否则由它派生的数字只会被归成 `unsourced`。
+
+    十一期给 `to_dict()` 补了 `taxable_base_major`（超出免税额度、实际计征的部分）。
+    出处判定看的是全部数字，所以有没有出处不受影响；但**成因推断**只在金额字段上做，
+    字段名不匹配 `_MONEY_FIELD` 时，"3.72 是它自己从 153.72 − 150 减出来的"
+    这条线索就丢了——而这类线索正是"判据指向工具该补什么"的依据。
+    """
+
+    def test_taxable_base_enters_the_money_pool(self):
+        sources = collect_sources([{"taxable_base_major": 29.0, "tariff_rate": 0.12}])
+        assert 29.0 in sources.money
+        # 费率不是金额：名字里带 rate 的一律挡在池外，否则会编出
+        # "0.12 + x" 这种荒唐成因（八期教训）
+        assert 0.12 not in sources.money
+
+    def test_difference_from_taxable_base_is_explained(self):
+        sources = collect_sources([{"taxable_base_major": 100.0, "subtotal_major": 130.0}])
+        report = check_reply("差额是 30 元", sources)
+        assert report.unsourced and report.unsourced[0].kind == KIND_DIFFERENCE

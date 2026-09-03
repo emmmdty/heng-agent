@@ -12,7 +12,12 @@ judge 当时手上只有商品表和汇率表，判词写的是"与商品库价�
 "验自洽"升级到"验正确"。这与金额出处校验是两条互补的线：
 出处校验管**数字有没有来源**，ground_truth 管**数字对不对**。
 """
+import ast
+from pathlib import Path
+
 from scripts.eval_regression import build_ground_truth
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestGroundTruth:
@@ -54,3 +59,37 @@ class TestGroundTruth:
         text = build_ground_truth()
         assert "7.5%" in text
         assert "旅行装备 8%" not in text
+
+    def test_includes_native_de_minimis_kinds(self):
+        """免税额度要给**原生口径**，否则 judge 核不了"美国免税门槛 $800"这句话。
+
+        十一期：额度本来就是各国用自己货币定义的（US 800 USD、EU 150 EUR），
+        只给 CNY 折算值时，Agent 的跨币种表述 judge 只能"拿不准按不通过"，
+        而那个数其实是对的。
+        """
+        text = build_ground_truth()
+        assert "800 USD" in text, "US 免税额度的原生口径"
+        assert "150 EUR" in text, "EU 免税额度的原生口径"
+
+    def test_states_taxable_base_formula(self):
+        """光说"超出部分"不够：judge 要能拿公式独立算出应税基数，
+        才判得了「1,199 × 12%」这种基数错误。"""
+        text = build_ground_truth()
+        assert "应税基数" in text
+        assert "整单金额 × 费率" in text, "必须明确点出错误写法，judge 才好照着判"
+
+    def test_does_not_import_private_de_minimis_constant(self):
+        """事实基准不该依赖领域层私有常量——十期就是那么写的，
+        规则表一改存储结构（十一期改成原生口径）这里立刻 ImportError。
+
+        判据按 AST 看**导入了什么名字**，不按文本 grep：注释里提一句常量名
+        （说明为什么不再用它）是正常的，grep 会把它误报成违规。
+        """
+        source = (PROJECT_ROOT / "scripts" / "eval_regression.py").read_text(encoding="utf-8")
+        imported = {
+            alias.name
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        assert not [name for name in imported if name.startswith("_DE_MINIMIS")]

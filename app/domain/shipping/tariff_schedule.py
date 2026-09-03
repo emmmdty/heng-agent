@@ -24,13 +24,23 @@ _TARIFF_RATES: dict[str, dict[str, float]] = {
     "SG": {"*": 0.07},
 }
 
-# 目的国免税额度（CNY 分）
-_DE_MINIMIS_CNY_MINOR: dict[str, int] = {
-    "CN": 5_000_00,   # 5000 元（个人物品行邮口径，简化）
-    "US": 800 * 710,  # 800 USD 折 CNY 分
-    "EU": 150 * 780,
-    "JP": 10_000 * 5,  # 简化口径
-    "SG": 400 * 530,
+# 目的国免税额度的**原生口径**：(金额 major, 币种)。
+#
+# 为什么不存折算后的 CNY：额度本来就是各国用自己的货币定义的（US 是 800 USD、EU 是 150 EUR），
+# 存 CNY 等于把汇率烙进规则表，而且**原生口径就此丢失**——买家语境是美国、目标币种是 CNY 时，
+# Agent 想说"美国免税门槛"只能自己反折成 `$800`，这个数没有工具出处。
+# 出处校验实测抓到过：它写的是"美国免税门槛 $800（约 ¥5680）"，5680 有出处、800 没有。
+# 这已经是同一个 `$800` 第三次从新路径回来（八期堵"凭知识说"、十期堵"工具没被调到"、
+# 这次是"调到了但口径不对"）。折算统一交给汇率表，规则表只管规则。
+#
+# 另：JP 原先写的是 `10_000 * 5`，手写的 0.05 与汇率表里的 JPY=0.048 不一致；
+# 改为从汇率表推导后 JP 额度是 480 CNY（原 500），属修正，且消掉了一处重复定义的汇率。
+_DE_MINIMIS_NATIVE: dict[str, tuple[float, str]] = {
+    "CN": (5_000.0, "CNY"),   # 5000 元（个人物品行邮口径，简化）
+    "US": (800.0, "USD"),
+    "EU": (150.0, "EUR"),
+    "JP": (10_000.0, "JPY"),  # 简化口径
+    "SG": (400.0, "SGD"),
 }
 
 # 目的国基础运费（CNY 分，单件；多件按 60% 递增，简化的续重逻辑）
@@ -41,6 +51,33 @@ _BASE_FREIGHT_CNY_MINOR: dict[str, int] = {
     "JP": 45_00,
     "SG": 40_00,
 }
+
+
+def _major(money: Money | None) -> float | None:
+    return round(money.to_major_units(), 2) if money is not None else None
+
+
+def _de_minimis_fields(
+    threshold: Money | None,
+    threshold_native: Money | None,
+    taxable_base: Money | None,
+    taxable_base_native: Money | None,
+) -> dict:
+    """免税额度与应税基数的对外字段。
+
+    单品报价与组合报价必须给出**同一组**字段，否则模型在"一件"和"两件"之间
+    切换时会时有时无地失去出处——单品/组合两条路径各写一份是这类缺陷的温床
+    （八期就是只修了单品那条，组合那条从另一头漏回来）。
+    """
+    return {
+        "de_minimis_threshold_major": _major(threshold),
+        "de_minimis_threshold_native_major": _major(threshold_native),
+        "de_minimis_threshold_native_currency": (
+            threshold_native.currency if threshold_native is not None else None
+        ),
+        "taxable_base_major": _major(taxable_base),
+        "taxable_base_native_major": _major(taxable_base_native),
+    }
 
 
 @dataclass(frozen=True)
@@ -56,6 +93,15 @@ class ShippingQuote:
     # 实测它说的是"美国 $800 以下免税"——数字碰巧对，但改了规则表它照样这么说，
     # 而且没有任何东西会报错（出处校验抓到的）。
     de_minimis_threshold: Money = None  # type: ignore[assignment]
+    # 免税额度的原生口径（US 800 USD / EU 150 EUR）与应税基数，理由见 `_DE_MINIMIS_NATIVE`
+    # 与 `taxable_base` 的注释：这三个数不给，模型要解释关税就只能自己减、自己反折。
+    de_minimis_threshold_native: Money = None  # type: ignore[assignment]
+    # 应税基数：超出免税额度、**实际参与计征**的那部分。
+    # 十期实测缺陷：Agent 写"1,199 × 12% ≈ ¥3.48"——最终数字对（工具给的）、
+    # 计税基数错（整单 1199 × 12% = 143.88，差 40 倍）。同一轮出处校验报的两处
+    # 无出处金额都是 `€3.72`，正是它自己减出来的这个基数。判据指的地方就是工具该补的地方。
+    taxable_base: Money = None  # type: ignore[assignment]
+    taxable_base_native: Money = None  # type: ignore[assignment]
 
     def landed_total(self) -> Money:
         return self.subtotal.add(self.freight).add(self.tariff)
@@ -68,9 +114,9 @@ class ShippingQuote:
             "tariff_major": self.tariff.to_major_units(),
             "tariff_rate": self.tariff_rate,
             "de_minimis_applied": self.de_minimis_applied,
-            "de_minimis_threshold_major": (
-                round(self.de_minimis_threshold.to_major_units(), 2)
-                if self.de_minimis_threshold is not None else None
+            **_de_minimis_fields(
+                self.de_minimis_threshold, self.de_minimis_threshold_native,
+                self.taxable_base, self.taxable_base_native,
             ),
             "landed_total_major": self.landed_total().to_major_units(),
             "currency": self.subtotal.currency,
@@ -98,6 +144,9 @@ class BasketQuote:
     tariff: Money
     de_minimis_applied: bool
     de_minimis_threshold: Money = None  # type: ignore[assignment]
+    de_minimis_threshold_native: Money = None  # type: ignore[assignment]
+    taxable_base: Money = None  # type: ignore[assignment]
+    taxable_base_native: Money = None  # type: ignore[assignment]
 
     def landed_total(self) -> Money:
         return self.subtotal.add(self.freight).add(self.tariff)
@@ -120,9 +169,9 @@ class BasketQuote:
             "freight_major": self.freight.to_major_units(),
             "tariff_major": self.tariff.to_major_units(),
             "de_minimis_applied": self.de_minimis_applied,
-            "de_minimis_threshold_major": (
-                round(self.de_minimis_threshold.to_major_units(), 2)
-                if self.de_minimis_threshold is not None else None
+            **_de_minimis_fields(
+                self.de_minimis_threshold, self.de_minimis_threshold_native,
+                self.taxable_base, self.taxable_base_native,
             ),
             "landed_total_major": self.landed_total().to_major_units(),
             "currency": self.subtotal.currency,
@@ -135,6 +184,21 @@ class TariffSchedule:
 
     def supported_destinations(self) -> list[str]:
         return sorted(_TARIFF_RATES.keys())
+
+    def de_minimis_native(self, ship_to: str) -> Money:
+        """免税额度的原生口径（US → 800 USD、EU → 150 EUR）。
+
+        公开出来是为了让规则表以外的地方（judge 的事实基准）不必再 import 私有常量——
+        十期的 `_landed_price_rules()` 就是那么写的，规则表一改结构那边就断。
+        """
+        if ship_to not in _DE_MINIMIS_NATIVE:
+            raise ValueError(f"暂不支持的目的国：{ship_to}（支持 {self.supported_destinations()}）")
+        major, currency = _DE_MINIMIS_NATIVE[ship_to]
+        return Money.from_major_units(major, currency)
+
+    def de_minimis(self, ship_to: str, target_currency: str) -> Money:
+        """免税额度折算到指定币种。折算只从原生口径出发一次，避免二次折算累积误差。"""
+        return self.rates.convert(self.de_minimis_native(ship_to), target_currency)
 
     def quote_basket(
         self,
@@ -184,8 +248,8 @@ class TariffSchedule:
             self.rates.convert(line.unit_price.multiply(line.quantity), "CNY").amount_in_minor_units
             for line in lines
         )
-        de_minimis_minor = _DE_MINIMIS_CNY_MINOR[ship_to]
-        taxable_total_minor = max(0, subtotal_cny_minor - de_minimis_minor)
+        de_minimis_cny = self.de_minimis(ship_to, "CNY")
+        taxable_total_minor = max(0, subtotal_cny_minor - de_minimis_cny.amount_in_minor_units)
         de_minimis_applied = taxable_total_minor == 0
 
         tariff_cny_minor = 0
@@ -210,10 +274,26 @@ class TariffSchedule:
             freight=freight_target,
             tariff=tariff_target,
             de_minimis_applied=de_minimis_applied,
-            de_minimis_threshold=self.rates.convert(
-                Money.of(de_minimis_minor, "CNY"), target_currency,
-            ),
+            **self._de_minimis_snapshot(ship_to, taxable_total_minor, target_currency),
         )
+
+    def _de_minimis_snapshot(
+        self, ship_to: str, taxable_cny_minor: int, target_currency: str,
+    ) -> dict:
+        """免税额度与应税基数的两种口径，单品与组合两条路径共用一份。
+
+        共用是刻意的：这两条路径各写一份的话，"一件"有出处、"两件"没出处
+        （八期就只修了单品那条）。原生口径同时给出，是因为买家语境的币种
+        常常不等于 target_currency，Agent 想跨币种表述就只能自己反折。
+        """
+        native = self.de_minimis_native(ship_to)
+        taxable_cny = Money.of(taxable_cny_minor, "CNY")
+        return {
+            "de_minimis_threshold": self.rates.convert(native, target_currency),
+            "de_minimis_threshold_native": native,
+            "taxable_base": self.rates.convert(taxable_cny, target_currency),
+            "taxable_base_native": self.rates.convert(taxable_cny, native.currency),
+        }
 
     def quote(self, subtotal: Money, category: str, ship_to: str, quantity: int, target_currency: str) -> ShippingQuote:
         """按目的国规则计算到手价三要素，全部折算为 target_currency。"""
@@ -233,8 +313,10 @@ class TariffSchedule:
         rate_table = _TARIFF_RATES[ship_to]
         tariff_rate = rate_table.get(category, rate_table["*"])
         subtotal_cny = self.rates.convert(subtotal, "CNY")
-        de_minimis_minor = _DE_MINIMIS_CNY_MINOR[ship_to]
-        taxable_minor_cny = max(0, subtotal_cny.amount_in_minor_units - de_minimis_minor)
+        de_minimis_cny = self.de_minimis(ship_to, "CNY")
+        taxable_minor_cny = max(
+            0, subtotal_cny.amount_in_minor_units - de_minimis_cny.amount_in_minor_units,
+        )
         de_minimis_applied = taxable_minor_cny == 0
         tariff_cny = Money.of(round(taxable_minor_cny * tariff_rate), "CNY")
         tariff_target = self.rates.convert(tariff_cny, target_currency)
@@ -246,7 +328,5 @@ class TariffSchedule:
             tariff=tariff_target,
             tariff_rate=tariff_rate,
             de_minimis_applied=de_minimis_applied,
-            de_minimis_threshold=self.rates.convert(
-                Money.of(de_minimis_minor, "CNY"), target_currency,
-            ),
+            **self._de_minimis_snapshot(ship_to, taxable_minor_cny, target_currency),
         )
