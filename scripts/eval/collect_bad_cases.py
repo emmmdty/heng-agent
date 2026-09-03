@@ -84,6 +84,12 @@ def main() -> None:
     parser.add_argument("--triage", default=None, help="按 fingerprint 或 case_id 定级")
     parser.add_argument("--status", default=None, choices=VALID_STATUSES, help="配合 --triage")
     parser.add_argument("--note", default="", help="配合 --triage：为什么定这个级")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="配合 --triage：按 case_id 定级时连**已定级**的条目一起覆盖"
+             "（默认跳过，避免静默冲掉人工判断）",
+    )
     args = parser.parse_args()
 
     pool_path = Path(args.pool)
@@ -95,8 +101,19 @@ def main() -> None:
     if args.triage:
         if not args.status:
             raise SystemExit("--triage 必须配 --status")
-        changed = triage(pool_path, args.triage, args.status, args.note)
+        changed, protected = triage(
+            pool_path, args.triage, args.status, args.note, force=args.force,
+        )
         print(f"已把 {changed} 条标为 {args.status}" if changed else f"没有匹配 {args.triage} 的条目")
+        for case in protected:
+            print(
+                f"  跳过（已定级为 {case.status}）：{case.fingerprint[:10]} {case.reason[:60]}",
+            )
+        if protected:
+            print(
+                "  要改这些请按指纹点名（上面那串前缀就能用），"
+                "确实要整批覆盖再加 --force。",
+            )
         return
 
     if args.promote:

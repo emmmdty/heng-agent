@@ -129,9 +129,9 @@ class TestTriage:
 
         path = tmp_path / "bad_cases.jsonl"
         merge(path, [_case("fp-1"), _case("fp-2")])
-        changed = triage(path, "compare-two", "wontfix", note="轨迹漏发已修，非模型问题")
+        changed, skipped = triage(path, "compare-two", "wontfix", note="轨迹漏发已修，非模型问题")
 
-        assert changed == 2
+        assert (changed, skipped) == (2, [])
         entries = list(load_pool(path).values())
         assert {entry.status for entry in entries} == {"wontfix"}
         assert all("轨迹漏发" in entry.triage_note for entry in entries)
@@ -141,7 +141,7 @@ class TestTriage:
 
         path = tmp_path / "bad_cases.jsonl"
         merge(path, [_case("fp-1"), _case("fp-2")])
-        assert triage(path, "fp-1", "promoted") == 1
+        assert triage(path, "fp-1", "promoted") == (1, [])
         assert load_pool(path)["fp-2"].status == "new"
 
     def test_unknown_status_is_rejected(self, tmp_path):
@@ -165,3 +165,72 @@ class TestTriage:
         entry = load_pool(path)["fp-1"]
         assert entry.status == "wontfix"
         assert entry.triage_note == "已确认非缺陷"
+
+
+class TestTriageProtectsHumanDecisions:
+    """分诊结果是人工判断的载体，工具不能让人一条命令静默冲掉。
+
+    真实踩到的：`--triage <case_id>` 命中该用例的**全部指纹**，
+    把之前已定为 wontfix 的另一条也一并改掉，还覆盖了它的备注——
+    而输出只说"已把 2 条标为 fixed"，看不出哪两条、也看不出原来是什么。
+    """
+
+    def _pool(self, tmp_path):
+        from scripts.eval.bad_case_pool import write_pool
+
+        path = tmp_path / "pool.jsonl"
+        old = _case("f2", reason="老发现", status="wontfix")
+        old.triage_note = "人工判过：属修辞取整"
+        write_pool(path, {"f1": _case("f1", reason="新发现"), "f2": old})
+        return path
+
+    def test_case_id_selector_skips_already_triaged(self, tmp_path):
+        from scripts.eval.bad_case_pool import load_pool, triage
+
+        path = self._pool(tmp_path)
+        changed, skipped = triage(path, "compare-two", "fixed", note="新的结论")
+        assert changed == 1 and [c.fingerprint for c in skipped] == ["f2"]
+
+        pool = load_pool(path)
+        assert pool["f1"].status == "fixed"
+        assert pool["f2"].status == "wontfix", "已定级的条目不能被批量覆盖"
+        assert pool["f2"].triage_note == "人工判过：属修辞取整", "备注更不能被冲掉"
+
+    def test_force_overrides_deliberately(self, tmp_path):
+        from scripts.eval.bad_case_pool import load_pool, triage
+
+        path = self._pool(tmp_path)
+        changed, skipped = triage(path, "compare-two", "fixed", note="确实都修了", force=True)
+        assert changed == 2 and skipped == []
+        assert load_pool(path)["f2"].status == "fixed"
+
+    def test_exact_fingerprint_always_applies(self, tmp_path):
+        """按指纹点名时不需要 --force：那本来就是"我知道我在改哪一条"。"""
+        from scripts.eval.bad_case_pool import load_pool, triage
+
+        path = self._pool(tmp_path)
+        changed, skipped = triage(path, "f2", "promoted", note="改主意了")
+        assert changed == 1 and skipped == []
+        assert load_pool(path)["f2"].status == "promoted"
+
+    def test_fingerprint_prefix_works(self, tmp_path):
+        """指纹是 16 位十六进制，`--list` 里显示的是前缀——
+        照着前缀敲进去必须能用，否则只会得到一句"没有匹配"。"""
+        from scripts.eval.bad_case_pool import load_pool, triage, write_pool
+
+        path = tmp_path / "p.jsonl"
+        write_pool(path, {"abcdef0123456789": _case("abcdef0123456789")})
+        changed, _ = triage(path, "abcdef01", "fixed")
+        assert changed == 1
+        assert load_pool(path)["abcdef0123456789"].status == "fixed"
+
+    def test_ambiguous_prefix_is_refused(self, tmp_path):
+        """前缀撞车时报错而不是挑一个改——改错哪一条是看不出来的。"""
+        import pytest
+
+        from scripts.eval.bad_case_pool import triage, write_pool
+
+        path = tmp_path / "p.jsonl"
+        write_pool(path, {"aaaa1111": _case("aaaa1111"), "aaaa2222": _case("aaaa2222")})
+        with pytest.raises(ValueError, match="前缀"):
+            triage(path, "aaaa", "fixed")

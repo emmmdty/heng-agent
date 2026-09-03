@@ -170,23 +170,50 @@ def from_report(report: dict) -> list[BadCase]:
     return cases
 
 
-def triage(path: Path, selector: str, status: str, note: str = "") -> int:
-    """把池子里匹配 `selector`（fingerprint 或 case_id）的条目定级，返回改动条数。
+def triage(
+    path: Path, selector: str, status: str, note: str = "", force: bool = False,
+) -> tuple[int, list["BadCase"]]:
+    """把池子里匹配 `selector` 的条目定级，返回 (改动条数, 被跳过的已定级条目)。
 
     分诊必须有命令可用：这一环若只能手改 JSONL，实际上没人会去改，
     飞轮就永远停在"发现"这一步，池子越攒越大直到被忽略。
+
+    `selector` 三种形态：完整 fingerprint、fingerprint 前缀（`--list` 显示的就是前缀，
+    照着敲必须能用）、case_id。
+
+    **按 case_id 批量定级时不覆盖已定级的条目**（除非 `force=True`）。
+    真实踩到的：一个 case_id 命中该用例的全部指纹，把之前人工定为 wontfix 的另一条
+    也一并改掉、备注一并冲掉，而输出只说"已把 2 条标为 fixed"——
+    看不出改了哪两条，更看不出原来是什么。**池子是人工判断的载体，
+    工具不该让人一条命令静默冲掉它。** 按指纹点名则不受此限：
+    那本来就是"我知道我在改哪一条"。
     """
     if status not in VALID_STATUSES:
         raise ValueError(f"未知状态 {status!r}，可选：{VALID_STATUSES}")
     pool = load_pool(path)
-    changed = 0
-    for case in pool.values():
-        if selector not in (case.fingerprint, case.case_id):
-            continue
+
+    exact = [case for case in pool.values() if case.fingerprint == selector]
+    by_prefix = [case for case in pool.values() if case.fingerprint.startswith(selector)]
+    if not exact and len(by_prefix) > 1:
+        raise ValueError(
+            f"指纹前缀 {selector!r} 匹配到 {len(by_prefix)} 条，无法确定改哪一条："
+            f"{[case.fingerprint for case in by_prefix]}",
+        )
+    targeted = exact or by_prefix
+    if targeted:
+        # 按指纹点名：明确知道改的是哪一条，不需要保护
+        matched, protected = targeted, []
+    else:
+        matched = [case for case in pool.values() if case.case_id == selector]
+        protected = (
+            [] if force else [case for case in matched if case.status != STATUS_NEW]
+        )
+        matched = [case for case in matched if case not in protected]
+
+    for case in matched:
         case.status = status
         if note:
             case.triage_note = note
-        changed += 1
-    if changed:
+    if matched:
         write_pool(path, pool)
-    return changed
+    return len(matched), protected
