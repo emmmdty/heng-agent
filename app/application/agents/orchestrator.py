@@ -142,6 +142,22 @@ class MainAgentOrchestrator:
             self._bus.publish(session_id, "error", {"message": "输出审核命中内部信息，已脱敏后下发"})
         return cleaned
 
+    def forget_session(self, session_id: str) -> None:
+        """清掉这个会话在编排器里的进程内状态。
+
+        由 `SessionRegistry` 的淘汰回调调用：会话被挤出内存时，
+        它的金额出处记录（每会话最多 4000×2 个 float）也该一起走，
+        否则那份记录会一直留到进程重启。
+
+        清掉之后该会话若再回来，出处校验会退回"无观测记录 → 只警告"这一档——
+        这是十四期就设计好的降级路径（为的是 AgentState 快照恢复场景），不是新风险。
+        """
+        if self._number_sources is not None:
+            self._number_sources.reset(session_id)
+        self._loop_detector.reset(session_id)
+        if self._drift_detector is not None:
+            self._drift_detector.reset(session_id)
+
     async def handle_intent(self, intent: SubmitIntentInput) -> SubmitIntentOutput:
         session_id = intent.shopping_session_id
         snapshot = ShoppingContextSnapshot(

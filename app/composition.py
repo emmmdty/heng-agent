@@ -283,7 +283,26 @@ async def build_container() -> Container:
         order_provenance=order_provenance_tracker,
         preference_selector=preference_selector,
     )
-    sessions = SessionRegistry(main_factory, session_store)
+    def _forget_session(session_id: str) -> None:
+        """会话被挤出内存时，把它的进程内判定状态一起清掉。
+
+        不让三个判定器各自设上限：那会出现"Agent 还在、它的出处记录已经被挤掉"
+        的错配——出处校验会降级成警告（安全），但**判据静默变松了，没人知道**。
+        以会话生命周期为准只有一处判断，语义也清楚。
+
+        注意 `orchestrator` 是在下面才创建的——这里是**延迟绑定**：
+        回调只会在处理请求时被调到，那时它早就存在了。
+        （反过来把 orchestrator 提前创建做不到：它的第一个参数就是 sessions。）
+        """
+        sequencing_tracker.reset(session_id)
+        order_provenance_tracker.reset(session_id)
+        orchestrator.forget_session(session_id)
+
+    sessions = SessionRegistry(
+        main_factory, session_store,
+        max_sessions=settings.session_cache_max,
+        on_evict=_forget_session,
+    )
     orchestrator = MainAgentOrchestrator(
         sessions, bus, preference_store, conversation_store, semantic_cache,
         output_guard_enabled=settings.output_guard_enabled,

@@ -16,7 +16,8 @@ AgentState 每轮落盘 DATA_DIR/sessions/，服务重启后恢复多轮对话�
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from collections import OrderedDict
+from typing import Callable, Optional
 
 from agentscope.agent import Agent, ReActConfig
 from agentscope.state import AgentState
@@ -162,18 +163,62 @@ class MainAgentFactory:
 
 class SessionRegistry:
     """按 shopping_session_id 缓存 MainAgent 实例，支撑多轮对话；
-    AgentState 经 SessionStore 端口落盘（SQLite 或文件），服务重启后恢复。"""
+    AgentState 经 SessionStore 端口落盘（SQLite 或文件），服务重启后恢复。
 
-    def __init__(self, main_factory: MainAgentFactory, session_store: SessionStore) -> None:
+    **有上限（LRU）**：十七期之前这个字典只增不减，而每个 Agent 揣着整段对话上下文，
+    于是进程内存随"见过多少个不同会话"单调增长，直到重启。
+    本地看不出来（会话就那么几个），压测也看不出来（用的会话数很少），
+    只有长跑的线上进程会慢慢涨——**这类涨法没有任何一条告警会响**。
+
+    淘汰是安全的：`AgentState` 每轮都落盘，被挤掉的会话下次再来会被恢复，
+    **不丢对话**，只丢进程内缓存。
+
+    `on_evict` 回调让调用方把该会话的其他进程内状态（顺序断言 / 金额出处 /
+    下单出处三个判定器）一起清掉——不让它们各自设上限，是因为那会出现
+    "Agent 还在、它的出处记录已经被挤掉"的错配：判据静默变松，而没人知道。
+    """
+
+    def __init__(
+        self,
+        main_factory: MainAgentFactory,
+        session_store: SessionStore,
+        max_sessions: int = 0,
+        on_evict: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self._main_factory = main_factory
         self._session_store = session_store
-        self._agents: dict[str, Agent] = {}
+        # OrderedDict 就是这里的 LRU：命中时挪到末尾，超限时从头部丢
+        self._agents: "OrderedDict[str, Agent]" = OrderedDict()
+        self._max_sessions = max(0, int(max_sessions))   # 0 = 不限
+        self._on_evict = on_evict
+
+    def cached_sessions(self) -> list[str]:
+        """当前缓存了哪些会话（最久未用在前）。给运维与单测看。"""
+        return list(self._agents.keys())
 
     async def get_or_create(self, shopping_session_id: str) -> Agent:
-        if shopping_session_id not in self._agents:
-            restored_state = await self._try_restore(shopping_session_id)
-            self._agents[shopping_session_id] = self._main_factory.build(restored_state)
+        if shopping_session_id in self._agents:
+            self._agents.move_to_end(shopping_session_id)
+            return self._agents[shopping_session_id]
+
+        restored_state = await self._try_restore(shopping_session_id)
+        self._agents[shopping_session_id] = self._main_factory.build(restored_state)
+        self._evict_if_needed()
         return self._agents[shopping_session_id]
+
+    def _evict_if_needed(self) -> None:
+        if not self._max_sessions:
+            return
+        while len(self._agents) > self._max_sessions:
+            evicted_id, _agent = self._agents.popitem(last=False)
+            logger.info("会话缓存已满，淘汰最久未用的会话：%s（当前 %d 个）",
+                        evicted_id, len(self._agents))
+            if self._on_evict is None:
+                continue
+            try:
+                self._on_evict(evicted_id)
+            except Exception as err:  # noqa: BLE001 —— 清理失败不能把这一轮对话搞挂
+                logger.warning("会话状态清理失败：%s（%s）", evicted_id, err)
 
     async def persist(self, shopping_session_id: str) -> None:
         """每轮对话结束后落盘 AgentState 快照；失败仅告警不影响主链路。"""

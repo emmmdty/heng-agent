@@ -92,6 +92,9 @@ class Settings:
     # 评测态故障注入：决定检索端口装饰器与 /debug/faults 端点**是否存在**。
     # 默认关是有意的——生产进程里不该存在这条代码路径。
     fault_injection_enabled: bool = False
+    # 进程内会话缓存上限（LRU）。0 = 不限（十七期之前的行为）。
+    # 每个缓存项是一个 Agent + 整段对话上下文，不设限时内存随会话数单调增长。
+    session_cache_max: int = 200
 
 
 def load_settings() -> Settings:
@@ -168,4 +171,5 @@ def load_settings() -> Settings:
         queue_large_request_turns=int(os.getenv("QUEUE_LARGE_REQUEST_TURNS", "30")),
         fault_injection_enabled=os.getenv("FAULT_INJECTION_ENABLED", "0")
         not in ("0", "false", "False"),
+        session_cache_max=int(os.getenv("SESSION_CACHE_MAX", "200")),
     )
