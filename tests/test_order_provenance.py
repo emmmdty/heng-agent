@@ -89,13 +89,14 @@ class TestProductProvenance:
 class TestScopeIsDeliberatelyNarrow:
     """范围收窄的方向一律取"宁可漏报不误报"，与金额出处校验同一条纪律。"""
 
-    def test_sku_without_provenance_is_only_a_warning(self):
-        """sku_id 只警告不硬拒。
+    def test_sku_without_provenance_never_blocks_the_order(self):
+        """sku_id 只警告不硬拒，且**没见过任何 sku 时连警告都不发**。
 
-        `filtered_out` 与 quote/optimize 两个工具的返回里**都没有 sku_id**
+        `filtered_out` 与 quote/optimize 两个工具的返回里都没有 sku_id
         （实测：filtered_out 只有 product_id/title/category/price/reason）。
-        按 sku 硬拒会把"算了就买那个超预算的"这种合法流程当场拒掉。
-        商品级替换才是要抓的东西，sku 级留作提示。
+        按 sku 硬拒会把"算了就买那个超预算的"这种合法流程当场拒掉；
+        而在一个 sku 都没见过的情况下发提醒同样不对——那时我们没有依据。
+        商品级替换才是要抓的东西。
         """
         tracker = OrderProvenanceTracker()
         tracker.record_result("s1", json.dumps({
@@ -103,7 +104,7 @@ class TestScopeIsDeliberatelyNarrow:
         }, ensure_ascii=False))
         outcome = tracker.check("s1", _items(("P1016", "P1016-S1")))
         assert not outcome.rejected
-        assert any("P1016-S1" in w for w in outcome.warnings)
+        assert not outcome.warnings
 
     def test_filtered_out_counts_as_provenance(self):
         """被硬约束挡掉的候选**也算出处**：它确实被工具返回、被模型看到过。
@@ -200,3 +201,30 @@ class TestMalformedInput:
         tracker.record_result("s1", "这不是 JSON")
         tracker.record_result("s1", "")
         assert tracker.check("s1", _items(("P1008", "P1008-S1"))).warnings
+
+
+class TestSkuWarningOnlyWhenWeHaveGrounds:
+    """sku 警告只在**见过该商品的 sku** 时才提醒。
+
+    组合报价与组合优化的返回里只有 product_id，没有 sku_id。
+    "没见过任何 sku"与"见过别的 sku、唯独没见过这一个"是两回事：
+    前者我们没有依据，提醒等于噪声——而模型对反复出现的无效提醒会学会忽略，
+    连带把真正有依据的那次也一起忽略掉。
+    """
+
+    def test_no_warning_when_no_sku_was_ever_seen_for_that_product(self):
+        tracker = OrderProvenanceTracker()
+        tracker.record_result("s1", json.dumps({
+            "selection": [{"product_id": "P1005", "title": "充电器"}],
+        }, ensure_ascii=False))
+        outcome = tracker.check("s1", _items(("P1005", "P1005-S1")))
+        assert not outcome.rejected
+        assert not outcome.warnings, "没见过这个商品的任何 sku，就没有依据提醒规格选错"
+
+    def test_warns_when_other_skus_of_the_same_product_were_seen(self):
+        """见过 P1008-S1、却下单 P1008-S9：这时提醒是有依据的。"""
+        tracker = OrderProvenanceTracker()
+        tracker.record_result("s1", _search_result("P1008"))
+        outcome = tracker.check("s1", _items(("P1008", "P1008-S9")))
+        assert not outcome.rejected
+        assert any("P1008-S9" in w for w in outcome.warnings)

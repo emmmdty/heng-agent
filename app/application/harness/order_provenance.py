@@ -18,10 +18,14 @@
 
 **范围刻意收窄，方向一律取"宁可漏报不误报"**（与金额出处校验同一条纪律）：
 
-    1. `product_id` 硬拒，`sku_id` 只警告。`filtered_out` 与 quote/optimize
-       两个工具的返回里都**没有** sku_id（实测 filtered_out 只有
-       product_id/title/category/price/reason），按 sku 硬拒会把
-       "算了就买那个超预算的"这种合法流程当场拒掉。商品级替换才是要抓的东西。
+    1. `product_id` 硬拒，`sku_id` 只警告、且**只在有依据时才警告**。
+       `filtered_out` 与 quote/optimize 两个工具的返回里都**没有** sku_id
+       （实测 filtered_out 只有 product_id/title/category/price/reason），
+       按 sku 硬拒会把"算了就买那个超预算的"这种合法流程当场拒掉；
+       而在一个 sku 都没见过时发提醒同样不对——那时我们没有依据，提醒就是噪声，
+       而模型对反复出现的无效提醒会学会忽略，连带把真正有依据的那次一起忽略掉。
+       所以只在"见过该商品的别的 sku、唯独没见过这一个"时才提醒。
+       商品级替换才是要抓的东西。
     2. 数量与地址不校验：它们来自买家原话，工具返回里没有出处，
        硬要校验只能靠猜，而猜错的代价是拒掉合法订单。
     3. `filtered_out` 里的候选**算出处**：它确实被工具返回过、被模型看到过。
@@ -45,34 +49,53 @@ _PRODUCT_KEY = "product_id"
 _SKU_KEY = "sku_id"
 
 
-def _walk(node: Any, products: set[str], skus: set[str]) -> None:
+def _walk(
+    node: Any,
+    products: set[str],
+    skus: set[str],
+    product_skus: dict[str, set[str]],
+    current: str = "",
+) -> None:
+    """深度遍历，并把 sku 归属到它所在子树的商品上。
+
+    归属关系是必要的：商品卡的形状是 `{product_id, ..., skus: [{sku_id}]}`，
+    只有知道"这个商品我们见过哪些 sku"，才判得了"见过别的 sku、唯独没见过这一个"
+    与"这个商品的 sku 我们一个都没见过"——后者没有依据提醒，提醒就是噪声。
+    """
     if isinstance(node, dict):
+        product_id = node.get(_PRODUCT_KEY)
+        if isinstance(product_id, str):
+            products.add(product_id)
+            current = product_id
+        sku_id = node.get(_SKU_KEY)
+        if isinstance(sku_id, str):
+            skus.add(sku_id)
+            if current:
+                product_skus.setdefault(current, set()).add(sku_id)
         for key, value in node.items():
-            if key == _PRODUCT_KEY and isinstance(value, str):
-                products.add(value)
-            elif key == _SKU_KEY and isinstance(value, str):
-                skus.add(value)
-            else:
-                _walk(value, products, skus)
+            if key in (_PRODUCT_KEY, _SKU_KEY):
+                continue
+            _walk(value, products, skus, product_skus, current)
     elif isinstance(node, list):
         for value in node:
-            _walk(value, products, skus)
+            _walk(value, products, skus, product_skus, current)
 
 
-def extract_identifiers(text: str) -> tuple[set[str], set[str]]:
-    """从一份工具返回里抽出商品与 SKU 标识。
+def extract_identifiers(text: str) -> tuple[set[str], set[str], dict[str, set[str]]]:
+    """从一份工具返回里抽出商品、SKU，以及"哪个商品见过哪些 SKU"。
 
     解析不了 JSON 就返回空集——报错文本（`[error] ...`）走的正是这条路，
     它里面的 id 不该成为出处。
     """
     products: set[str] = set()
     skus: set[str] = set()
+    product_skus: dict[str, set[str]] = {}
     try:
         payload = json.loads(text)
     except (TypeError, ValueError):
-        return products, skus
-    _walk(payload, products, skus)
-    return products, skus
+        return products, skus, product_skus
+    _walk(payload, products, skus, product_skus)
+    return products, skus, product_skus
 
 
 def _normalize_items(items: Any) -> list[tuple[str, str, int]]:
@@ -116,16 +139,23 @@ class OrderProvenanceTracker:
 
     _products: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     _skus: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    # 会话 → 商品 → 见过的 sku。用来区分"没见过这商品的任何 sku"（没有依据，不提醒）
+    # 与"见过别的 sku、唯独没这一个"（有依据，提醒）
+    _product_skus: dict[str, dict[str, set[str]]] = field(
+        default_factory=lambda: defaultdict(dict),
+    )
     _orders: dict[str, list[tuple[tuple, str]]] = field(
         default_factory=lambda: defaultdict(list),
     )
 
     def record_result(self, session_id: str, text: str) -> None:
-        products, skus = extract_identifiers(text)
+        products, skus, product_skus = extract_identifiers(text)
         if products:
             self._products[session_id] |= products
         if skus:
             self._skus[session_id] |= skus
+        for product_id, sku_ids in product_skus.items():
+            self._product_skus[session_id].setdefault(product_id, set()).update(sku_ids)
 
     def record_order(self, session_id: str, items: Any, order_id: str) -> None:
         normalized = _normalize_items(items)
@@ -135,6 +165,7 @@ class OrderProvenanceTracker:
     def reset(self, session_id: str) -> None:
         self._products.pop(session_id, None)
         self._skus.pop(session_id, None)
+        self._product_skus.pop(session_id, None)
         self._orders.pop(session_id, None)
 
     def check(self, session_id: str, items: Any) -> AssertionOutcome:
@@ -165,12 +196,18 @@ class OrderProvenanceTracker:
             )
             return outcome
 
-        seen_skus = self._skus.get(session_id, set())
-        unknown_skus = sorted(
-            {sku_id for _, sku_id, _ in normalized if sku_id and sku_id not in seen_skus},
-        )
+        # sku 只在**有依据时**才提醒：见过这个商品的别的 sku、唯独没见过这一个。
+        # 一个 sku 都没见过（组合优化路径就是这样，它的返回里根本没有 sku_id）时
+        # 我们没有依据，提醒就是噪声——而模型对反复出现的无效提醒会学会忽略，
+        # 连带把真正有依据的那次一起忽略掉。
+        known = self._product_skus.get(session_id, {})
+        unknown_skus = sorted({
+            sku_id
+            for product_id, sku_id, _ in normalized
+            if sku_id and known.get(product_id) and sku_id not in known[product_id]
+        })
         if unknown_skus:
-            # 只警告：部分工具返回（filtered_out、quote_basket、optimize_basket）
+            # 只警告不硬拒：部分工具返回（filtered_out、quote_basket、optimize_basket）
             # 本来就不带 sku_id，硬拒会误杀合法流程
             outcome.warnings.append(
                 f"注意：{'、'.join(unknown_skus)} 未在本会话的工具返回里出现过。"
