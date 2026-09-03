@@ -147,9 +147,27 @@ class BasketQuote:
     de_minimis_threshold_native: Money = None  # type: ignore[assignment]
     taxable_base: Money = None  # type: ignore[assignment]
     taxable_base_native: Money = None  # type: ignore[assignment]
+    # 分开买（每个商品各一单、各付一次运费）的到手价合计。
+    # smoke 轮实测：Agent 答对了"分开买 $72.95、省 $3.65"，但这两个数
+    # 没有任何工具出处——它是自己把两个单品到手价加起来、再减出来的。
+    # 判据指的地方就是工具该补的地方（同八期 de_minimis_threshold、十一期 taxable_base）。
+    separate_purchase_landed: Money = None  # type: ignore[assignment]
 
     def landed_total(self) -> Money:
         return self.subtotal.add(self.freight).add(self.tariff)
+
+    def combining_saving(self) -> Money:
+        """分开买 − 合并买。一件商品时是 0，不是 None——模型会直接把它写进回复。"""
+        if self.separate_purchase_landed is None:
+            return Money.of(0, self.subtotal.currency)
+        return Money.of(
+            max(
+                0,
+                self.separate_purchase_landed.amount_in_minor_units
+                - self.landed_total().amount_in_minor_units,
+            ),
+            self.subtotal.currency,
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -174,6 +192,11 @@ class BasketQuote:
                 self.taxable_base, self.taxable_base_native,
             ),
             "landed_total_major": self.landed_total().to_major_units(),
+            "separate_purchase_landed_major": (
+                round(self.separate_purchase_landed.to_major_units(), 2)
+                if self.separate_purchase_landed is not None else None
+            ),
+            "combining_saving_major": round(self.combining_saving().to_major_units(), 2),
             "currency": self.subtotal.currency,
         }
 
@@ -266,6 +289,18 @@ class TariffSchedule:
                 tariff_cny_minor += round(line_taxable * line_rate)
         tariff_target = self.rates.convert(Money.of(tariff_cny_minor, "CNY"), target_currency)
 
+        # 分开买的对照：每个商品各一单、各付一次运费。
+        # 口径是"每个商品一单"而不是"每件一单"——同一行的多件本来就是一次履约。
+        separate_minor = 0
+        if len(lines) > 1:
+            for line in lines:
+                single = self.quote_basket([line], ship_to=ship_to, target_currency=target_currency)
+                separate_minor += single.landed_total().amount_in_minor_units
+        else:
+            separate_minor = (
+                subtotal_target.add(freight_target).add(tariff_target).amount_in_minor_units
+            )
+
         return BasketQuote(
             ship_to=ship_to,
             lines=list(lines),
@@ -274,6 +309,7 @@ class TariffSchedule:
             freight=freight_target,
             tariff=tariff_target,
             de_minimis_applied=de_minimis_applied,
+            separate_purchase_landed=Money.of(separate_minor, target_currency),
             **self._de_minimis_snapshot(ship_to, taxable_total_minor, target_currency),
         )
 

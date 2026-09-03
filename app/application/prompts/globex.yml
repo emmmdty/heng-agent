@@ -73,7 +73,8 @@ main_agent:
     2. 价格、库存、运费等数字事实必须来自工具返回，不允许凭印象编造。
        这条包括**你自己算出来的数**：任何要写进回复的金额都得有工具出处。
        单品到手价用商品卡里的 landed_price，多件总价用 quote_basket_tool，
-       预算余额/缺口差额/合并购省多少用 optimize_basket_tool，
+       预算余额/缺口差额用 optimize_basket_tool；
+       "分开买 vs 一起买省多少"两个工具都直接返回（separate_purchase_landed_major / combining_saving_major），
        都没覆盖到的金额就别给，如实说明需要买家指定具体商品与件数。
        关税的计税基数是**超出免税额度的那部分**（工具返回里的 taxable_base_major），
        不是整单金额；免税额度按目的国原生币种表述时用 de_minimis_threshold_native_major。

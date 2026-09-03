@@ -337,12 +337,14 @@ def optimize_basket(
             ),
         )
 
-    # 分开买的对照：每件各自一次履约。差额（"一起买省多少"）此前没有出处。
-    separate_minor = 0
-    for group, candidate in chosen:
-        separate_minor += tariff.quote_basket(
-            [_line_of(group, candidate)], ship_to=ship_to, target_currency=target_currency,
-        ).landed_total().amount_in_minor_units
+    # 分开买的对照直接读报价，不在这里再算一遍：
+    # 十六期把它下沉进了 `quote_basket()`，两个工具从同一个 BasketQuote 上读。
+    # 各算各的会变成三处口径，而"分开买怎么算"只该有一个定义。
+    separate_minor = (
+        quote.separate_purchase_landed.amount_in_minor_units
+        if quote is not None and quote.separate_purchase_landed is not None
+        else 0
+    )
 
     return BasketPlan(
         ship_to=ship_to,

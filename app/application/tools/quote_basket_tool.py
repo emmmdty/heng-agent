@@ -42,6 +42,10 @@ def build_quote_basket_tool(
         不要自己把单品到手价相加：运费按一次履约计（不是各单品运费之和），
         免税额度按整批小计判定（不是逐件判定），自行相加会得到错误金额。
 
+        返回里还带**分开买的对照**：`separate_purchase_landed_major`（各自下单、
+        各付一次运费的合计）与 `combining_saving_major`（合并买省多少）。
+        要讲"一起买划算多少"时直接用这两个数，不要自己减。
+
         Args:
             items (`list`):
                 商品清单，每项形如 {"product_id": "P1004", "quantity": 1}；

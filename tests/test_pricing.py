@@ -353,3 +353,70 @@ class TestDeMinimisNativeCurrency:
     def test_unsupported_destination_rejected_by_accessors(self, schedule):
         with pytest.raises(ValueError, match="不支持"):
             schedule.de_minimis_native("ZZ")
+
+
+class TestSeparatePurchaseComparison:
+    """组合报价要自带"分开买 vs 合并买"的对照。
+
+    smoke 轮实测（compare-two）：Agent 答对了——$69.30 是合单总价，
+    $72.95 是它明确标注的"分开买"对照，$3.65 是省下的差额。
+    但后两个数**没有工具出处**：十一期只给 optimize_basket_tool 补了这两个字段，
+    而对比类问题走的是 quote_basket_tool，模型只能自己减。
+    **判据指的地方就是工具该补的地方**（同八期的 de_minimis_threshold、
+    十一期的 taxable_base）。
+    """
+
+    def _schedule(self):
+        return TariffSchedule(rates=ExchangeRateTable())
+
+    def test_two_items_report_the_separate_purchase_total(self):
+        """P1008 露营灯 89 + P1005 充电器 159 寄 CN：
+        合单小计 248 + 运费 40 = 288；分开买 (89+25) + (159+25) = 298；省 10。"""
+        quote = self._schedule().quote_basket(
+            [
+                BasketLine("P1008", "露营灯", "户外运动", Money.from_major_units(89, "CNY"), 1),
+                BasketLine("P1005", "充电器", "数码配件", Money.from_major_units(159, "CNY"), 1),
+            ],
+            ship_to="CN", target_currency="CNY",
+        )
+        payload = quote.to_dict()
+        assert payload["landed_total_major"] == 288.0
+        assert payload["separate_purchase_landed_major"] == 298.0
+        assert payload["combining_saving_major"] == 10.0
+
+    def test_single_line_saves_nothing(self):
+        """一件商品时分开买就是合并买，差额必须是 0 而不是负数或 None——
+        模型会把这个数直接写进回复。"""
+        quote = self._schedule().quote_basket(
+            [BasketLine("P1008", "露营灯", "户外运动", Money.from_major_units(89, "CNY"), 1)],
+            ship_to="CN", target_currency="CNY",
+        )
+        payload = quote.to_dict()
+        assert payload["separate_purchase_landed_major"] == payload["landed_total_major"]
+        assert payload["combining_saving_major"] == 0.0
+
+    def test_quantity_stays_within_one_line(self):
+        """同一行买 3 件仍是一次履约：分开买的口径是"每个商品各一单"，
+        不是"每件各一单"。"""
+        schedule = self._schedule()
+        quote = schedule.quote_basket(
+            [BasketLine("P1008", "露营灯", "户外运动", Money.from_major_units(89, "CNY"), 3)],
+            ship_to="CN", target_currency="CNY",
+        )
+        payload = quote.to_dict()
+        assert payload["separate_purchase_landed_major"] == payload["landed_total_major"]
+
+    def test_matches_the_usd_reading_from_the_smoke_run(self):
+        """实测那一轮的数：AeroHush Lite 299 CNY + VoltTrek 30W 89 CNY 寄 US、美元口径。
+        合单 $69.30；分开买 $51.26 + $21.69 = $72.95；省 $3.65。"""
+        quote = self._schedule().quote_basket(
+            [
+                BasketLine("P1", "AeroHush Lite", "数码配件", Money.from_major_units(299, "CNY"), 1),
+                BasketLine("P2", "VoltTrek 30W", "数码配件", Money.from_major_units(89, "CNY"), 1),
+            ],
+            ship_to="US", target_currency="USD",
+        )
+        payload = quote.to_dict()
+        assert payload["landed_total_major"] == 69.3
+        assert payload["separate_purchase_landed_major"] == 72.95
+        assert payload["combining_saving_major"] == 3.65
