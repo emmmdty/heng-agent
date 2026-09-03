@@ -135,3 +135,29 @@ class TestMissingPins:
         from scripts.eval.audit_cases import missing_pins
 
         assert missing_pins({"P1002", "P1015"}, {"P1008"}) == set()
+
+
+class TestFaultComponentAudit:
+    """用例声明的故障组件名要静态校验。
+
+    拼错一个名字（`reranker` 写成 `rerank`）的后果是服务端 400、整条用例 ERROR，
+    而这要等到跑测时才发现——一轮 60-90 分钟真金白银。静态查出来成本是零。
+    """
+
+    def test_unknown_component_is_reported(self):
+        from scripts.eval.audit_cases import _unknown_fault_components
+
+        found = _unknown_fault_components([{"id": "a", "faults": ["rerank"]}])
+        assert found and found[0][0] == "a"
+        assert found[0][1] == ["rerank"]
+
+    def test_known_components_pass(self):
+        from app.infrastructure.faults import COMPONENTS
+        from scripts.eval.audit_cases import _unknown_fault_components
+
+        assert _unknown_fault_components([{"id": "a", "faults": list(COMPONENTS)}]) == []
+
+    def test_cases_without_faults_are_untouched(self):
+        from scripts.eval.audit_cases import _unknown_fault_components
+
+        assert _unknown_fault_components([{"id": "a"}]) == []

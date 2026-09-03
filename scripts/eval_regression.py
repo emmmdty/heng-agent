@@ -197,9 +197,57 @@ def score_case(judged: dict) -> tuple[float, bool]:
     return round(weighted, 3), p0_ratio == 1.0
 
 
+def declared_fault_components(cases: list[dict]) -> set[str]:
+    """本轮选中的用例一共声明了哪些故障组件。"""
+    components: set[str] = set()
+    for case in cases:
+        components.update(case.get("faults") or [])
+    return components
+
+
+def guard_fault_support(cases: list[dict], health: dict) -> None:
+    """开跑前拦截：有用例声明了故障，而服务没启用注入。
+
+    不拦的后果很安静：那条用例会在**一切正常**的情况下跑完，然后大概率 PASS——
+    判据成了绿色装饰，还烧了一轮配额。与 CI 里"没数据就当通过"是同一个陷阱：
+    一个永远绿的判据比没有判据更坏，它让人以为这块被覆盖了。
+
+    没有用例声明故障时不做任何检查——绝大多数轮次都不注入，
+    把它做成硬前置等于给所有人加一道无谓的门槛。
+    """
+    needed = declared_fault_components(cases)
+    if not needed:
+        return
+    injection = health.get("fault_injection")
+    if isinstance(injection, dict) and injection.get("enabled"):
+        return
+    raise SystemExit(
+        f"本轮有用例声明了故障注入（{sorted(needed)}），但服务未启用。\n"
+        f"请以 FAULT_INJECTION_ENABLED=1 重启服务后再跑：\n"
+        f"    FAULT_INJECTION_ENABLED=1 uv run uvicorn app.presentation.server:app --port 8000\n"
+        f"（不拦下来的话，这些用例会在精排/向量库完全正常的情况下跑完并大概率 PASS）",
+    )
+
+
+async def apply_faults(client: httpx.AsyncClient, components: list[str]) -> None:
+    """设置当前进程的故障注入；空列表 = 清空。
+
+    失败**必须抛**：吞掉异常继续跑，等于在没有故障的情况下评一条故障用例，
+    结论是假的而且看不出来。
+    """
+    response = await client.post(
+        f"{BASE_URL}/debug/faults", json={"components": components}, timeout=30,
+    )
+    response.raise_for_status()
+
+
 async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> dict:
     session_id = f"eval-{case['id']}-{uuid.uuid4().hex[:6]}"
     buyer_id = case.get("buyer_id") or f"eval-buyer-{case['id']}"
+    faults = list(case.get("faults") or [])
+    if faults:
+        # 注入失败就让异常冒到上层，把这条用例判 ERROR——不能在无故障的情况下评它
+        await apply_faults(client, faults)
     transcript_lines: list[str] = []
     for query in case["queries"]:
         response = await client.post(
@@ -217,6 +265,11 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
         final_text = response.json()["final_text"]
         transcript_lines.append(f"[买家] {query}\n[Agent] {final_text}")
 
+    if faults:
+        # 无论判分成功与否都要清干净：漏清会让**后面每一条用例**都带着故障跑，
+        # 而报告里只有这一条写着 faults——那种读数没人能解释
+        await apply_faults(client, [])
+
     transcript = "\n\n".join(transcript_lines)
     judged = await call_judge(client, transcript, case["rubric"], ground_truth, case.get("prior_context", ""))
     score, p0_all_pass = score_case(judged)
@@ -227,6 +280,8 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
         # scripts/eval/audit_number_provenance.py 的「扫描范围」）。
         "session_id": session_id,
         "description": case["description"],
+        # 报告要写明这条是在什么故障下跑的，否则"检索档位不对"会被归因到检索参数
+        "faults": faults,
         "score": score,
         "p0_pass": p0_all_pass,
         "verdict": "PASS" if p0_all_pass and score >= 0.7 else "FAIL",
@@ -245,13 +300,16 @@ def render_report(results: list[dict], run_line: str = "") -> str:
         f"总览：{sum(1 for r in results if r['verdict'] == 'PASS')}/{len(results)} PASS，"
         f"平均分 {sum(r['score'] for r in results) / len(results):.3f}",
         "",
-        "| case | 描述 | 得分 | P0 | 结果 |",
-        "|------|------|------|-----|------|",
+        "| case | 描述 | 得分 | P0 | 故障注入 | 结果 |",
+        "|------|------|------|-----|------|------|",
     ]
     for r in results:
+        # 故障注入单列一栏：不写的话，"这条的检索档位不对"会被归因到检索参数，
+        # 而真相是这一条本来就是在精排被人为打挂的情况下跑的
+        faults = "/".join(r.get("faults") or []) or "—"
         lines.append(
             f"| {r['id']} | {r['description']} | {r['score']} | "
-            f"{'通过' if r['p0_pass'] else '不通过'} | {r['verdict']} |",
+            f"{'通过' if r['p0_pass'] else '不通过'} | {faults} | {r['verdict']} |",
         )
     lines.append("")
     for r in results:
@@ -378,6 +436,7 @@ async def main() -> None:
     with open(args.cases, encoding="utf-8") as f:
         cases = yaml.safe_load(f)["cases"]
     cases = select_cases(cases, only=args.only, tag=args.tag)
+    guard_fault_support(cases, health)
 
     results = []
     ground_truth = build_ground_truth()

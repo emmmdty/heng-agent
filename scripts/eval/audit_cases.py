@@ -124,6 +124,22 @@ def missing_pins(matched_ids: set[str], pinned: set[str]) -> set[str]:
     return matched_ids - pinned
 
 
+def _unknown_fault_components(cases: list[dict]) -> list[tuple[str, list[str], list[str]]]:
+    """用例声明的故障组件必须是服务认得的名字。
+
+    静态查出来的成本是零；等跑测时才发现的成本是一轮 60-90 分钟——
+    拼错一个组件名，服务端 400，那条用例直接 ERROR。
+    """
+    from app.infrastructure.faults import COMPONENTS
+
+    found = []
+    for case in cases:
+        unknown = [item for item in (case.get("faults") or []) if item not in COMPONENTS]
+        if unknown:
+            found.append((case["id"], sorted(unknown), list(COMPONENTS)))
+    return found
+
+
 async def main() -> int:
     products = await InMemoryProductRepository().list_all()
     cases = yaml.safe_load(_CASES.read_text(encoding="utf-8"))["cases"]
@@ -154,8 +170,10 @@ async def main() -> int:
                 # query 收敛到了 A，rubric 却钉着同品牌的 B —— 两边打架，必然误判
                 mismatches.append((case["id"], brand, resolution.winner, pinned))
 
+    bad_faults = _unknown_fault_components(cases)
+
     print(f"{_CASES}：{len(cases)} 条用例，商品库 {len(products)} 个 SPU\n")
-    if not problems and not mismatches and not partial_pins:
+    if not problems and not mismatches and not partial_pins and not bad_faults:
         print("用例自检通过：每个品牌指代都能由 query 收敛到唯一商品，"
               "或被显式点名做对比且 rubric 已逐一钉住")
         return 0
@@ -177,6 +195,11 @@ async def main() -> int:
         print(f"[{case_id}] \"{brand}\"：query 点名了多个变体做对比，"
               f"但 rubric 只钉了 {pinned}，漏了 {gap}——"
               f"漏掉的那个答错也会照样 PASS\n")
+
+    for case_id, unknown, supported in bad_faults:
+        print(f"[{case_id}] 声明了未知的故障组件 {unknown}，可选：{supported}——"
+              f"拼错的组件名会让服务端 400，整条用例判 ERROR，"
+              f"而这要等到跑测时才发现（一轮 60-90 分钟）\n")
 
     print("修法建议：在 query 里补足消歧信息（如带上品类词或型号），"
           "而不是放宽 rubric——放宽会让用例失去检验能力。")
