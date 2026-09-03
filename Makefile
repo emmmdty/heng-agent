@@ -6,7 +6,7 @@
 #
 # make 遇到非零退出码即中断，四个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check check-ci test datasets cases provenance eval eval-smoke health serve
+.PHONY: check check-ci test datasets cases provenance eval eval-smoke health serve serve-faults
 
 check: test datasets cases provenance
 	@echo "== 门禁通过 =="
@@ -48,7 +48,8 @@ provenance:
 
 # —— 以下带真实 LLM 成本，不进 check ——
 
-# 整轮回归：13 条 ≈ 25-40 分钟。跑之前先确认 /health 里 semantic_cache 为 false。
+# 整轮回归：40 条 ≈ 80-120 分钟。跑之前先确认 /health 里 semantic_cache 为 false。
+# 其中 3 条带故障注入，需要服务以 make serve-faults 起（否则开跑前被拦下）。
 eval:
 	EVAL_JUDGE_MODEL=deepseek-v4-flash uv run python -u scripts/eval_regression.py
 
@@ -65,3 +66,10 @@ health:
 
 serve:
 	uv run uvicorn app.presentation.server:app --port 8000
+
+# 带故障注入的服务：eval/cases.yaml 里 `faults:` 那几条用例需要它。
+# 没有它，声明了故障的用例会在开跑前被 eval_regression 拦下
+# （不拦的话它们会在一切正常的情况下跑完并大概率 PASS——判据成了绿色装饰）。
+# **生产不要这么起**：装饰器与 /debug/faults 端点都会存在。
+serve-faults:
+	FAULT_INJECTION_ENABLED=1 uv run uvicorn app.presentation.server:app --port 8000
