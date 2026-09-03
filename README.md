@@ -182,11 +182,13 @@ CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项*
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 544 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 559 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：12 条 case（--tag smoke）
+uv run python scripts/eval_regression.py --dry-run   # 开跑前体检：前置全查一遍，一次模型调用都不发
 make eval                                  # 评测回归全量：40 条 case，LLM judge 按 P0/P1/P2 Rubric 打分出报告
+uv run python scripts/eval_regression.py --resume eval/partial-<stamp>.json  # 中断后续跑（前置用例自动补回）
 uv run python scripts/eval/run_product_recall.py --compare-strategies   # 六档召回对比
 uv run python scripts/eval/run_product_recall.py --sweep-lexical-gate 0,4,8 --sweep-base hybrid_rerank  # 门限标定
 uv run python scripts/eval/validate_datasets.py       # 召回标注集自检（105 商品 + 22 品类）
