@@ -77,6 +77,28 @@ def collect_scores(
     return scores
 
 
+def run_level_means(
+    reports: list[dict], require_fingerprint: bool = False,
+) -> dict[str, list[float]]:
+    """每一轮的均分，按（配置行 + 用例集规模）分组。
+
+    人们引用的是均分（"这轮 0.973"），而单条散布回答不了"均分能抖多少"。
+    带上用例数是因为 smoke 轮与 full 轮的均分本来就不可比。
+    """
+    means: dict[str, list[float]] = defaultdict(list)
+    for report in reports:
+        valid = [
+            r for r in report.get("results") or []
+            if r.get("verdict") != "ERROR"
+            and (not require_fingerprint or r.get("rubric_fingerprint"))
+        ]
+        if not valid:
+            continue
+        key = f"{config_key(report)}｜{len(valid)} 条"
+        means[key].append(statistics.fmean(float(r.get("score", 0.0)) for r in valid))
+    return means
+
+
 def summarize(scores: dict[tuple[str, str], list[float]], min_runs: int) -> list[dict]:
     rows = []
     for (config, case_id), values in scores.items():
@@ -134,6 +156,16 @@ def main() -> int:
             f"（十八期之后的报告才记这个字段）。这些行可能把改判据前后的读数混在一起，"
             f"算出来的散布**不能当成模型的自然波动**——重跑两轮新的再看。",
         )
+
+    means = run_level_means(reports, require_fingerprint=args.require_fingerprint)
+    repeated = {k: v for k, v in means.items() if len(v) >= args.min_runs}
+    if repeated:
+        print("\n## 整轮均分的波动（人们引用的就是这个数）\n")
+        print("| 配置｜规模 | 轮次 | 最低 | 最高 | 散布 |")
+        print("|---|---|---|---|---|")
+        for key, values in sorted(repeated.items()):
+            print(f"| {key[-40:]} | {len(values)} | {min(values):.3f} | {max(values):.3f} "
+                  f"| **{max(values) - min(values):.3f}** |")
 
     unstable = [row for row in rows if row["spread"] > 0]
     print(f"\n同配置下分数有波动的用例：{len(unstable)} / {len(rows)}")

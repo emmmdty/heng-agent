@@ -90,3 +90,31 @@ class TestRequireFingerprint:
             _report("A", [_result("c1", 0.5)]),
         ]
         assert sum(len(v) for v in collect_scores(reports).values()) == 2
+
+
+class TestRunLevelMeans:
+    """整轮均分的波动——人们引用的就是这个数，而单条散布回答不了它。"""
+
+    def test_groups_by_config_and_size(self):
+        from scripts.eval.variance import run_level_means
+
+        means = run_level_means([
+            _report("A", [_result("c1", 1.0), _result("c2", 0.8)]),
+            _report("A", [_result("c1", 1.0), _result("c2", 1.0)]),
+        ])
+        assert list(means.values()) == [[0.9, 1.0]]
+
+    def test_smoke_and_full_do_not_mix(self):
+        """12 条的均分与 44 条的均分本来就不可比。"""
+        from scripts.eval.variance import run_level_means
+
+        means = run_level_means([
+            _report("A", [_result("c1", 1.0)]),
+            _report("A", [_result("c1", 1.0), _result("c2", 1.0)]),
+        ])
+        assert len(means) == 2
+
+    def test_error_only_report_is_skipped(self):
+        from scripts.eval.variance import run_level_means
+
+        assert run_level_means([_report("A", [_result("c1", 0.0, verdict="ERROR")])]) == {}
