@@ -81,6 +81,10 @@ _ABSOLUTE_TOLERANCE_CAP = 1.0
 # 的成因——一个错的解释比没有解释更坏，它会把人引向错误的根因。
 _CLASSIFY_ABSOLUTE_TOLERANCE = 1.0
 
+# "算得上精确"的门槛：只用来提前收工，不参与判定。取 1e-9 是因为浮点相减必有残差
+# （1341.9 - 200 = 1141.9000000000001），拿 == 0 比会永远早停不了。
+_EXACT_EPSILON = 1e-9
+
 # 无出处金额的分类。kind 是给人看的诊断线索，不参与通过与否的判定。
 KIND_UNSOURCED = "unsourced"
 KIND_SUM = "suspected_sum"
@@ -96,8 +100,15 @@ def _matches(value: float, source: float) -> bool:
     return abs(value - source) <= tolerance
 
 
-def _roughly(value: float, expected: float) -> bool:
-    return abs(value - expected) <= _CLASSIFY_ABSOLUTE_TOLERANCE
+def _is_exact(key: tuple[float, int, int]) -> bool:
+    """已经是两个硬出身操作数的精确算式——没有候选能再赢它，可以停止搜索。
+
+    留这个早停是为了别把"挑最贴近的"变成"每个无出处金额都跑满 C(60,3)"：
+    组合搜索在运行时每轮都要付钱。
+    三项都要满足才停：只看误差会在还有更短、出身更硬的候选时提前收工。
+    """
+    error, size, rank = key
+    return error <= _EXACT_EPSILON and size == 2 and rank == 0
 
 
 @dataclass(frozen=True)
@@ -106,10 +117,15 @@ class AmountSources:
 
     numbers  工具返回与买家原话里出现过的**所有**数字，用于判定"有没有出处"
     money    其中落在金额字段上的那部分，用于推断"是不是模型自己加减出来的"
+    stated   买家原话里的数字。**预算只在这里**——它不在任何工具字段上，
+             而"超预算多少""还剩多少"这两类算式的操作数正是预算。
+             十九期之前它只进 numbers，于是精确成因根本不在候选集里
+             （见 `_classify` 的注释）。
     """
 
     numbers: tuple[float, ...] = ()
     money: tuple[float, ...] = ()
+    stated: tuple[float, ...] = ()
 
     def has(self, value: float) -> bool:
         return any(_matches(value, source) for source in self.numbers)
@@ -171,12 +187,19 @@ def collect_sources(
     """
     numbers: list[float] = []
     money: list[float] = []
+    stated: list[float] = []
     for payload in tool_results:
         _walk(payload, "", numbers, money)
     for text in buyer_texts:
         for match in _ANY_NUMBER.finditer(text or ""):
-            numbers.append(_parse(match.group(0)))
-    return AmountSources(numbers=tuple(numbers), money=tuple(sorted(set(money))))
+            value = _parse(match.group(0))
+            numbers.append(value)
+            stated.append(value)
+    return AmountSources(
+        numbers=tuple(numbers),
+        money=tuple(sorted(set(money))),
+        stated=tuple(sorted(set(stated))),
+    )
 
 
 def extract_amounts(text: str) -> list[tuple[float, str]]:
@@ -189,32 +212,94 @@ def extract_amounts(text: str) -> list[tuple[float, str]]:
     return [(value, raw) for _, value, raw in found]
 
 
+def _subtrahends(sources: AmountSources) -> tuple[float, ...]:
+    """能当减数的数：工具的金额字段 + 买家自述的数字，去重后从小到大。
+
+    买家自述必须进：**预算不在任何工具字段上**，而"超出预算多少"这类算式
+    正是拿预算当减数。十九期之前减数池只取金额字段，于是
+    "1341.9 − 200（买家预算）" 这个精确成因压根不在候选集里，
+    剩下的候选里最"像"的就成了擦边命中的 "1341.9 − 199"——
+    这种情况下光会挑最贴近的也救不回来，候选集本身就是缺的。
+
+    0 不进：免税额度内关税为 0，几乎每条商品卡上都有一个 0，
+    留着它等于给任何数字都配得出一个 "x − 0" 的假解释，把真成因盖掉。
+    """
+    pool = {item for item in sources.money if item > 0.0}
+    pool.update(item for item in sources.stated if item > 0.0)
+    return tuple(sorted(pool))
+
+
 def _classify(value: float, sources: AmountSources) -> tuple[str, str]:
-    """给无出处金额找一个最可能的成因，找不到就是纯无出处。
+    """给无出处金额找一个最贴近的成因，找不到就是纯无出处。
 
-    0 不进任何池：免税额度内关税为 0，几乎每条商品卡上都有一个 0，
-    留着它等于给任何数字都配得出一个 "0 + x" 的假解释，把真成因盖掉。
+    **必须把候选找全再挑最贴近的，不能一命中就返回。**实测代价
+    （eval-conflict-budget-spec-9c422d，买家自述预算 200）：
 
+        ¥1,141.90  报成 "1341.9 - 199"（差 1.0，靠容差上限擦边命中）
+                   真相是 1341.9 - 200（精确相等）
+        ¥99        报成 "9 + 89"（差 1.0）
+                   真相是 299 - 200——所以"先搜和、命中就返回"也不行，
+                   挑最贴近的必须**跨类**挑，不能让和天然赢过差。
+
+    容差是留给展示取整的（250 − 228.15 = 21.85 被写成 "$22"），
+    不是给"差一块钱也算"用的。调容差治不了这个：调大只会制造更多错解释，
+    调小会连真的取整解释一起砍掉——该改的是在候选里挑最贴近的那个。
+
+    候选排序按 (误差, 操作数个数, 操作数出身)：误差小的赢；误差相同取算式更短的；
+    再相同取操作数出身更硬的（金额字段/买家自述 > 自由文本里解析出的数字）；
+    最后按发现顺序（和在前、差在后），保证同一份输入每次给同一个解释。
+
+    第三项不是锦上添花：**精确解经常不止一个**。$21.85 那轮里
+    "250 − 228.15"（买家预算 − 到手价，真相）与 "220 − 198.15" 都精确成立，
+    而 220 只是自由文本里解析出来的一个数——按发现顺序挑就会挑中后者，
+    读报告的人会去查一个根本不存在的 220 元商品。
+
+    0 不进加数池：理由同 `_subtrahends`。
     加数池另外按目标值剪枝——正金额相加只会变大，比目标还大的数不可能是加数。
     减数池**不能**同样剪：差额的减数本来就比差值大（250 − 228.15 = 21.85）。
+    被减数取全部出处数字，不收窄到金额字段：实测收窄会掉解释——
+    long-context-memory 那轮的 ¥27 真相是 "72 − 45"，而 72 只出现在
+    工具返回的自由文本里；把它剪掉之后，赢下来的是差 1.0 的 "39 − 13"。
     """
     positive = tuple(item for item in sources.money if item > 0.0)
-
     addends = tuple(item for item in positive if item <= value + _CLASSIFY_ABSOLUTE_TOLERANCE)
     addends = addends[-_MAX_CLASSIFY_POOL:]
+    strong = _subtrahends(sources)
+    subtrahends = strong[-_MAX_CLASSIFY_POOL:]
+    strong_set = frozenset(strong)
+
+    best_key: tuple[float, int, int] | None = None
+    best: tuple[str, str] = (KIND_UNSOURCED, "")
+
+    # 加数一律取自金额字段，出身分档恒为 0
     for size in range(2, _MAX_COMBINATION + 1):
         for combo in itertools.combinations(addends, size):
-            if _roughly(value, sum(combo)):
-                return KIND_SUM, " + ".join(f"{item:g}" for item in combo)
+            error = abs(value - sum(combo))
+            if error > _CLASSIFY_ABSOLUTE_TOLERANCE:
+                continue
+            key = (error, size, 0)
+            if best_key is None or key < best_key:
+                best_key = key
+                best = (KIND_SUM, " + ".join(f"{item:g}" for item in combo))
+                if _is_exact(key):
+                    return best
 
-    # 差额：买家预算减到手价这类。被减数取全部出处数字（预算来自买家原话，
-    # 不在金额字段里），减数只取金额字段。
-    subtrahends = positive[-_MAX_CLASSIFY_POOL:]
+    # 差额：买家预算减到手价（还剩多少）、到手价减预算（超出多少），两个方向都要覆盖。
     for minuend in dict.fromkeys(sources.numbers):
+        rank = 0 if minuend in strong_set else 1
         for subtrahend in subtrahends:
-            if minuend > subtrahend and _roughly(value, minuend - subtrahend):
-                return KIND_DIFFERENCE, f"{minuend:g} - {subtrahend:g}"
-    return KIND_UNSOURCED, ""
+            if minuend <= subtrahend:
+                continue
+            error = abs(value - (minuend - subtrahend))
+            if error > _CLASSIFY_ABSOLUTE_TOLERANCE:
+                continue
+            key = (error, 2, rank)
+            if best_key is None or key < best_key:
+                best_key = key
+                best = (KIND_DIFFERENCE, f"{minuend:g} - {subtrahend:g}")
+                if _is_exact(key):
+                    return best
+    return best
 
 
 def check_reply(reply: str, sources: AmountSources) -> ProvenanceReport:
@@ -249,6 +334,7 @@ class SessionSources:
 
     _numbers: dict[str, list[float]] = field(default_factory=dict)
     _money: dict[str, list[float]] = field(default_factory=dict)
+    _stated: dict[str, list[float]] = field(default_factory=dict)
 
     def observe(
         self,
@@ -259,19 +345,22 @@ class SessionSources:
         fresh = collect_sources(tool_results=tool_results, buyer_texts=buyer_texts)
         numbers = self._numbers.setdefault(session_id, [])
         money = self._money.setdefault(session_id, [])
+        stated = self._stated.setdefault(session_id, [])
         numbers.extend(fresh.numbers)
         money.extend(fresh.money)
-        if len(numbers) > MAX_RETAINED_NUMBERS:
-            del numbers[: len(numbers) - MAX_RETAINED_NUMBERS]
-        if len(money) > MAX_RETAINED_NUMBERS:
-            del money[: len(money) - MAX_RETAINED_NUMBERS]
+        stated.extend(fresh.stated)
+        for bucket in (numbers, money, stated):
+            if len(bucket) > MAX_RETAINED_NUMBERS:
+                del bucket[: len(bucket) - MAX_RETAINED_NUMBERS]
 
     def of(self, session_id: str) -> AmountSources:
         return AmountSources(
             numbers=tuple(self._numbers.get(session_id, ())),
             money=tuple(sorted(set(self._money.get(session_id, ())))),
+            stated=tuple(sorted(set(self._stated.get(session_id, ())))),
         )
 
     def reset(self, session_id: str) -> None:
         self._numbers.pop(session_id, None)
         self._money.pop(session_id, None)
+        self._stated.pop(session_id, None)
