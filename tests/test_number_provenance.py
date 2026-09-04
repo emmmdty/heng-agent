@@ -341,3 +341,85 @@ class TestClosestExplanationWins:
         }
         report = check_reply("到手 $228.15，预算还剩 $21.85。", _sources([tool_result], ["预算 250 美元"]))
         assert report.unsourced[0].explain == "250 - 228.15"
+
+
+# —— basket_misadd：组合总价错加（二十二期） ——
+#
+# 缺陷形状（quote_basket_tool docstring 记录的实测）：买家问"两个一起多少钱"，
+# 模型把两个单品 landed_price 相加当组合总价——每个加数都来自工具，
+# judge 判 PASS，错的是"运费按一次履约计"这条模型推不出来的口径。
+#
+# 升级为确定性违规的四个条件（宁可漏报不误报，缺一不可）：
+#   1. 金额无出处；
+#   2. 成因是 ≥2 个 landed 值相加；
+#   3. **金额所在行带组合语境、且不带分开语境**（"分开买合计"是合法用法）；
+#   4. 会话内存在 quote_basket 报价，且组合总价与该金额不符。
+# 没有第 4 条就没有 ground truth，只降级为 suspected_sum 线索，不定罪。
+
+_BASKET_QUOTE = {
+    "tool": "quote_basket_tool",
+    "subtotal_major": 388.0,
+    "freight_major": 104.0,
+    "tariff_major": 0.0,
+    "landed_total_major": 492.0,
+    "separate_purchase_landed_major": 518.0,
+    "combining_saving_major": 26.0,
+}
+# 分开买对照算不出来时的真实形态（to_dict 对 None 原样回 None）。
+# 锚点测试用它：518 不在出处池里，才轮得到"升级还是保持线索"的判定。
+_BASKET_QUOTE_NO_SEPARATE = {
+    "tool": "quote_basket_tool",
+    "subtotal_major": 388.0,
+    "freight_major": 104.0,
+    "tariff_major": 0.0,
+    "landed_total_major": 492.0,
+    "separate_purchase_landed_major": None,
+    "combining_saving_major": None,
+}
+_LANDED_HITS = {"hits": [
+    {"landed_price": {"landed_total_major": 364.0}},
+    {"landed_price": {"landed_total_major": 154.0}},
+]}
+
+
+class TestBasketMisadd:
+    def test_combined_wording_with_basket_quote_is_a_violation(self):
+        """工具报了 492，回复仍把 364+154 当组合总价——该信的不信，定罪。"""
+        sources = _sources([_LANDED_HITS, _BASKET_QUOTE_NO_SEPARATE])
+        report = check_reply("两个一起下单的组合到手价 ¥518。", sources)
+        assert [item.kind for item in report.unsourced] == ["basket_misadd"]
+
+    def test_separate_wording_stays_a_clue(self):
+        """真实流水（eval-compare-two-1b9144）：'两件分开买合计：¥518' 是合法用法
+        ——分开买本来就是各付各的运费，加法恰好是对的。不得误报。"""
+        sources = _sources([_LANDED_HITS, _BASKET_QUOTE_NO_SEPARATE])
+        report = check_reply("两件分开买合计：¥518。", sources)
+        assert [item.kind for item in report.unsourced] == ["suspected_sum"]
+
+    def test_separate_wording_wins_when_both_appear_in_one_line(self):
+        """真实流水（eval-compare-two-5af430）：一行里既有'合并'又有'分别买'，
+        金额在"分别买"的括号里——按分开理解，宁漏报不误报。"""
+        sources = _sources([_LANDED_HITS, _BASKET_QUOTE_NO_SEPARATE])
+        report = check_reply("合并到手总价 ¥492 比分别买（¥364 + ¥154 = ¥518）少了 ¥26。", sources)
+        kinds = [item.kind for item in report.unsourced if item.value == 518.0]
+        assert kinds == ["suspected_sum"]
+
+    def test_value_matching_the_basket_quote_has_provenance(self):
+        """工具返回里的 separate_purchase_landed_major 本身就是出处。"""
+        sources = _sources([_LANDED_HITS, _BASKET_QUOTE])
+        assert check_reply("分开买合计 ¥518，合到一单 ¥492。", sources).clean
+
+    def test_no_basket_quote_stays_a_clue(self):
+        """工具没报过组合价就没有 ground truth——"一起买到手 ¥518"不定罪
+        （这正是二十期 judge 判 PASS 的那一轮的处境）。"""
+        sources = _sources([_LANDED_HITS])
+        report = check_reply("两个一起买到手 ¥518。", sources)
+        assert [item.kind for item in report.unsourced] == ["suspected_sum"]
+
+    def test_non_landed_addends_stay_a_clue(self):
+        """加数不全来自 landed 字段时不升级：比如价格 + 价格的组合，
+        那不是"运费重复计"这个缺陷形状。"""
+        tool_result = {"hits": [{"price_major": 364.0}, {"price_major": 154.0}]}
+        sources = _sources([tool_result, _BASKET_QUOTE_NO_SEPARATE])
+        report = check_reply("两个一起下单合计 ¥518。", sources)
+        assert [item.kind for item in report.unsourced] == ["suspected_sum"]

@@ -86,9 +86,22 @@ _CLASSIFY_ABSOLUTE_TOLERANCE = 1.0
 _EXACT_EPSILON = 1e-9
 
 # 无出处金额的分类。kind 是给人看的诊断线索，不参与通过与否的判定。
+# basket_misadd 例外：它不是线索，是**确定性违规**——四个条件同时成立才升级
+# （无出处、≥2 个 landed 值相加、金额所在行带组合语境且不带分开语境、
+# 会话内存在 quote_basket 报价且组合总价与该金额不符），见 check_reply。
 KIND_UNSOURCED = "unsourced"
 KIND_SUM = "suspected_sum"
 KIND_DIFFERENCE = "suspected_difference"
+KIND_BASKET_MISADD = "basket_misadd"
+
+# 组合语境 / 分开语境：金额**所在行**的措辞决定"相加当总价"是不是缺陷。
+# "两件分开买合计：¥518"（eval-compare-two-1b9144）是合法用法——分开买
+# 本来就是各付各的运费，加法恰好是对的；"一起下单的组合到手价 ¥518"
+# 才是运费重复计。一行里两种语境都出现时按分开理解（宁漏报不误报）。
+_COMBINED_CONTEXT = re.compile(
+    r"组合|合并|合单|一起下单|一起买|合起来|一同下单|同时下单|同一包裹|装在一起|一起结算",
+)
+_SEPARATE_CONTEXT = re.compile(r"分开|分别|各买|各自|单独下单|单独买")
 
 
 def _parse(literal: str) -> float:
@@ -121,11 +134,18 @@ class AmountSources:
              而"超预算多少""还剩多少"这两类算式的操作数正是预算。
              十九期之前它只进 numbers，于是精确成因根本不在候选集里
              （见 `_classify` 的注释）。
+    landed   金额字段里名字带 landed 的那部分（单品到手价）。
+             basket_misadd 的加数必须全部出自这里——"拿单品到手价相加当组合总价"
+             是特定缺陷形状，价格+价格相加不在此列。
+    basket   quote_basket_tool 报价里的全部金额字段。会话内存在组合报价，
+             "相加当组合总价"才有了 ground truth；没有它只有线索，不定罪。
     """
 
     numbers: tuple[float, ...] = ()
     money: tuple[float, ...] = ()
     stated: tuple[float, ...] = ()
+    landed: tuple[float, ...] = ()
+    basket: tuple[float, ...] = ()
 
     def has(self, value: float) -> bool:
         return any(_matches(value, source) for source in self.numbers)
@@ -158,19 +178,34 @@ class ProvenanceReport:
         }
 
 
-def _walk(node: Any, field_name: str, numbers: list[float], money: list[float]) -> None:
+def _walk(
+    node: Any,
+    field_name: str,
+    numbers: list[float],
+    money: list[float],
+    landed: list[float],
+    basket: list[float],
+    in_basket: bool = False,
+) -> None:
     if isinstance(node, dict):
+        # quote_basket_tool 的返回整体是"组合报价的 ground truth"：
+        # 组合总价、分开买对照、节省额都算。判定靠工具名认，不靠字段名猜。
+        child_basket = in_basket or node.get("tool") == "quote_basket_tool"
         for key, value in node.items():
-            _walk(value, key, numbers, money)
+            _walk(value, key, numbers, money, landed, basket, child_basket)
     elif isinstance(node, (list, tuple)):
         for value in node:
-            _walk(value, field_name, numbers, money)
+            _walk(value, field_name, numbers, money, landed, basket, in_basket)
     elif isinstance(node, bool):
         pass  # bool 是 int 的子类，必须在数值分支之前挡掉
     elif isinstance(node, (int, float)):
         numbers.append(float(node))
         if _MONEY_FIELD.search(field_name) and not _RATE_FIELD.search(field_name):
             money.append(float(node))
+            if in_basket:
+                basket.append(float(node))
+            if "landed" in field_name.lower():
+                landed.append(float(node))
     elif isinstance(node, str):
         # 工具返回里的自由文本（知识库片段、错误信息）同样是出处
         for match in _ANY_NUMBER.finditer(node):
@@ -188,8 +223,10 @@ def collect_sources(
     numbers: list[float] = []
     money: list[float] = []
     stated: list[float] = []
+    landed: list[float] = []
+    basket: list[float] = []
     for payload in tool_results:
-        _walk(payload, "", numbers, money)
+        _walk(payload, "", numbers, money, landed, basket)
     for text in buyer_texts:
         for match in _ANY_NUMBER.finditer(text or ""):
             value = _parse(match.group(0))
@@ -199,6 +236,8 @@ def collect_sources(
         numbers=tuple(numbers),
         money=tuple(sorted(set(money))),
         stated=tuple(sorted(set(stated))),
+        landed=tuple(sorted(set(landed))),
+        basket=tuple(sorted(set(basket))),
     )
 
 
@@ -229,8 +268,11 @@ def _subtrahends(sources: AmountSources) -> tuple[float, ...]:
     return tuple(sorted(pool))
 
 
-def _classify(value: float, sources: AmountSources) -> tuple[str, str]:
+def _classify(value: float, sources: AmountSources) -> tuple[str, str, tuple[float, ...]]:
     """给无出处金额找一个最贴近的成因，找不到就是纯无出处。
+
+    返回值第三项是和类成因的加数（非和类为空元组）——basket_misadd
+    的升级判定需要知道加数是谁，全来自 landed 字段才谈得上"到手价相加"。
 
     **必须把候选找全再挑最贴近的，不能一命中就返回。**实测代价
     （eval-conflict-budget-spec-9c422d，买家自述预算 200）：
@@ -270,6 +312,7 @@ def _classify(value: float, sources: AmountSources) -> tuple[str, str]:
 
     best_key: tuple[float, int, int] | None = None
     best: tuple[str, str] = (KIND_UNSOURCED, "")
+    best_addends: tuple[float, ...] = ()
 
     # 加数一律取自金额字段，出身分档恒为 0
     for size in range(2, _MAX_COMBINATION + 1):
@@ -281,8 +324,9 @@ def _classify(value: float, sources: AmountSources) -> tuple[str, str]:
             if best_key is None or key < best_key:
                 best_key = key
                 best = (KIND_SUM, " + ".join(f"{item:g}" for item in combo))
+                best_addends = combo
                 if _is_exact(key):
-                    return best
+                    return best + (best_addends,)
 
     # 差额：买家预算减到手价（还剩多少）、到手价减预算（超出多少），两个方向都要覆盖。
     for minuend in dict.fromkeys(sources.numbers):
@@ -297,9 +341,43 @@ def _classify(value: float, sources: AmountSources) -> tuple[str, str]:
             if best_key is None or key < best_key:
                 best_key = key
                 best = (KIND_DIFFERENCE, f"{minuend:g} - {subtrahend:g}")
+                best_addends = ()
                 if _is_exact(key):
-                    return best
-    return best
+                    return best + (best_addends,)
+    return best + (best_addends,)
+
+
+def _line_containing(reply: str, position: int) -> str:
+    """金额所在行的原文——组合/分开语境的锚点按行取，不按整条回复取。
+
+    整条回复里两种语境几乎总会同时出现（组合价一节旁边就是分开买对照），
+    按整条取会让锚点永远失真；按行取才能对上真实流水的排版。
+    """
+    start = reply.rfind("\n", 0, position) + 1
+    end = reply.find("\n", position)
+    return reply[start:end if end != -1 else len(reply)]
+
+
+def _is_basket_misadd(value: float, addends: tuple[float, ...], sources: AmountSources, line: str) -> bool:
+    """升级为确定性违规的四个条件，缺一不可（宁可漏报不误报）：
+
+    1. 成因是 ≥2 个加数的和（调用方已保证 kind == suspected_sum）；
+    2. 加数**全部**来自 landed 字段——"单品到手价相加"是特定缺陷形状；
+    3. 金额所在行带组合语境、且不带分开语境（"分开买合计"是合法用法）；
+    4. 会话内存在 quote_basket 报价，且没有哪个报价金额与该值相符
+       ——相符即有出处，根本到不了这里；再比一次是防 separate 对照
+       恰好等于该值的情形被误判。
+    """
+    if not sources.basket or not addends:
+        return False
+    landed = frozenset(sources.landed)
+    if any(addend not in landed for addend in addends):
+        return False
+    if _SEPARATE_CONTEXT.search(line):
+        return False
+    if not _COMBINED_CONTEXT.search(line):
+        return False
+    return not any(_matches(value, quote) for quote in sources.basket)
 
 
 def check_reply(reply: str, sources: AmountSources) -> ProvenanceReport:
@@ -309,11 +387,19 @@ def check_reply(reply: str, sources: AmountSources) -> ProvenanceReport:
     不给它开特例，是因为特例会让"错误回复里编数字"也一并被放过。
     """
     report = ProvenanceReport()
-    for value, raw in extract_amounts(reply):
+    occurrences: list[tuple[int, float, str]] = []
+    for pattern in (_CURRENCY_PREFIXED, _CURRENCY_SUFFIXED):
+        for match in pattern.finditer(reply or ""):
+            occurrences.append((match.start(), _parse(match.group(1)), match.group(0).strip()))
+    occurrences.sort(key=lambda item: item[0])
+    for position, value, raw in occurrences:
         report.total_amounts += 1
         if sources.has(value):
             continue
-        kind, explain = _classify(value, sources)
+        kind, explain, addends = _classify(value, sources)
+        if kind == KIND_SUM and _is_basket_misadd(value, addends, sources, _line_containing(reply, position)):
+            kind = KIND_BASKET_MISADD
+            explain = f"{explain}（quote_basket 已报组合总价：单品到手价相加会把运费重复计一次）"
         report.unsourced.append(UnsourcedAmount(value=value, raw=raw, kind=kind, explain=explain))
     return report
 
@@ -335,6 +421,8 @@ class SessionSources:
     _numbers: dict[str, list[float]] = field(default_factory=dict)
     _money: dict[str, list[float]] = field(default_factory=dict)
     _stated: dict[str, list[float]] = field(default_factory=dict)
+    _landed: dict[str, list[float]] = field(default_factory=dict)
+    _basket: dict[str, list[float]] = field(default_factory=dict)
 
     def observe(
         self,
@@ -346,10 +434,14 @@ class SessionSources:
         numbers = self._numbers.setdefault(session_id, [])
         money = self._money.setdefault(session_id, [])
         stated = self._stated.setdefault(session_id, [])
+        landed = self._landed.setdefault(session_id, [])
+        basket = self._basket.setdefault(session_id, [])
         numbers.extend(fresh.numbers)
         money.extend(fresh.money)
         stated.extend(fresh.stated)
-        for bucket in (numbers, money, stated):
+        landed.extend(fresh.landed)
+        basket.extend(fresh.basket)
+        for bucket in (numbers, money, stated, landed, basket):
             if len(bucket) > MAX_RETAINED_NUMBERS:
                 del bucket[: len(bucket) - MAX_RETAINED_NUMBERS]
 
@@ -358,9 +450,13 @@ class SessionSources:
             numbers=tuple(self._numbers.get(session_id, ())),
             money=tuple(sorted(set(self._money.get(session_id, ())))),
             stated=tuple(sorted(set(self._stated.get(session_id, ())))),
+            landed=tuple(sorted(set(self._landed.get(session_id, ())))),
+            basket=tuple(sorted(set(self._basket.get(session_id, ())))),
         )
 
     def reset(self, session_id: str) -> None:
         self._numbers.pop(session_id, None)
         self._money.pop(session_id, None)
         self._stated.pop(session_id, None)
+        self._landed.pop(session_id, None)
+        self._basket.pop(session_id, None)
