@@ -73,6 +73,24 @@ class TestProductSearchTraceFidelity:
         assert not missing, f"事件轨迹漏发了模型能看到的字段：{sorted(missing)}"
 
 
+    async def test_attribute_mismatch_reaches_the_event_trail(self, search_tool):
+        """属性冲突声明也要进事件轨迹。
+
+        这是经验 2 的同一条：`filtered_out` 与 `insights` 当年都是"后来加进返回值、
+        忘了同步事件"，症状是审计把有出处的东西判成无出处。
+        `attribute_mismatch` 藏在 hits[] 里，顶层 key 比对看不见它，
+        所以要单独钉一条——否则"卡片上有、轨迹里没有"不会有任何告警。
+        """
+        tool, queue = search_tool
+        response = await _invoke(tool, normalized_query="主动降噪 耳机", top_k=8)
+
+        returned = json.loads(response.content[0].text)
+        flagged = [hit for hit in returned["hits"] if "attribute_mismatch" in hit]
+        assert flagged, "夹具应召回显式声明不具备主动降噪的候选，否则这条测不到东西"
+        (event,) = _drain(queue)
+        assert event["hits"] == returned["hits"], "事件里的商品卡必须与模型看到的逐字一致"
+
+
 class TestPerSkuLandedPrice:
     async def test_every_sku_carries_its_own_landed_price(self, search_tool):
         """非主 SKU 的到手价必须由工具给出。

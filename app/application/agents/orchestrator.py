@@ -39,6 +39,10 @@ from app.application.harness.arithmetic_check import check_arithmetic
 from app.application.harness.confirmation import ConfirmationTracker
 from app.application.harness.drift_detector import DriftDetector
 from app.application.harness.loop_detector import LoopDetector
+from app.application.harness.contact_provenance import (
+    SessionContactSources,
+    check_contact,
+)
 from app.application.harness.number_provenance import SessionSources, check_reply
 from app.application.memory.preference_selector import (
     PreferenceSelector,
@@ -133,6 +137,12 @@ class MainAgentOrchestrator:
         # 金额出处：默认开启且在本类内部构造，不做成"外部注入才生效"的可选依赖——
         # 那样一旦忘了在 composition 里接上，外观与"故意关掉"完全一样（BM25 的教训）。
         self._number_sources = SessionSources() if number_provenance_enabled else None
+        # 收货字段出处：与金额出处同一个开关。两条判据抓的是同一条缝的两侧
+        # ——那条管钱，这条管买家的个人信息（地址错了包裹寄到别人家）。
+        # 同样在本类内部构造，不做成可选依赖，理由见上一行。
+        self._contact_sources = (
+            SessionContactSources() if number_provenance_enabled else None
+        )
 
     def _guard_final_text(self, session_id: str, text: str) -> str:
         """L4 输出审核：最终回复推给买家前脱敏内部信息。
@@ -232,6 +242,9 @@ class MainAgentOrchestrator:
                 # 算式自洽与金额出处并列：一个管"数字从哪来"，一个管"过程算不算得通"。
                 # 缓存命中的轮次同样跳过——那是上一次已校验过的回复在重放。
                 self._check_arithmetic(intent, final_text, events)
+                # 收货字段出处：与金额出处并列，抓的是"买家没给过的个人信息
+                # 被写进了回复"。同样跳过缓存命中的轮次。
+                self._check_contact_provenance(intent, final_text, events)
             await self._record_conversation(
                 intent, final_text, int((time.monotonic() - started_at) * 1000), events,
             )
@@ -387,6 +400,49 @@ class MainAgentOrchestrator:
         events.append(
             ConversationEventRecord(
                 session_id=session_id, type="arith.inconsistent", payload=payload,
+            ),
+        )
+
+    def _check_contact_provenance(
+        self,
+        intent: SubmitIntentInput,
+        final_text: str,
+        events: list[ConversationEventRecord],
+    ) -> None:
+        """轮末收货字段出处校验：回复里的地址/电话/邮编都得在工具返回或买家原话里找得到。
+
+        来源（二十期整轮实测，`clarify-missing-address`）：买家只说了"帮我下单
+        2 个 LumenGo 露营灯军绿色"，Agent 回复"您之前的记录是上海市浦东新区
+        世纪大道100号"——**那个地址不存在于任何地方**，本轮只调用过
+        `product_search_tool`，偏好库里也没有。它是编的，还安了一个出处。
+
+        与金额出处、算式自洽并列，三条都是**只告警不改写**：本轮已经结束，
+        改写来不及；而一次误报把正确回复打回，代价远大于一个被标记的字段。
+        告警的价值在于被看见——进事件流给前端、进落盘轨迹给离线审计与 bad case 回收。
+
+        缓存命中的轮次跳过：那是上一次已校验过的回复在重放，本轮没有工具调用。
+        """
+        if self._contact_sources is None:
+            return
+        session_id = intent.shopping_session_id
+        self._contact_sources.observe(
+            session_id,
+            tool_results=[event.payload for event in events if event.type == "tool.result"],
+            buyer_texts=[intent.raw_query],
+        )
+        report = check_contact(final_text, self._contact_sources.of(session_id))
+        if report.clean:
+            return
+        payload = {"message": "回复中存在无出处的收货字段", **report.to_dict()}
+        logger.warning(
+            "收货字段出处校验命中（会话 %s）：%s",
+            session_id,
+            [(item.kind, item.raw) for item in report.unsourced],
+        )
+        self._bus.publish(session_id, "contact.unsourced", payload)
+        events.append(
+            ConversationEventRecord(
+                session_id=session_id, type="contact.unsourced", payload=payload,
             ),
         )
 

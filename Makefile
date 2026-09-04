@@ -1,17 +1,17 @@
 # Globex 提交前门禁。
 #
-# check 里的五项全部是**零 LLM 成本**的确定性检查，加起来十几秒，
+# check 里的六项全部是**零 LLM 成本**的确定性检查，加起来十几秒，
 # 所以约定是「每次提交前必跑」，而不是「想起来再跑」。
 # 真正烧钱的端到端 Rubric 回归（eval / eval-smoke）不在 check 里，单独手动跑。
 #
-# make 遇到非零退出码即中断，五个脚本的退出码都已对齐（0 通过 / 1 不通过）。
+# make 遇到非零退出码即中断，六个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check check-ci test datasets cases provenance arithmetic eval eval-smoke variance health serve serve-faults
+.PHONY: check check-ci test datasets cases provenance arithmetic contact eval eval-smoke variance health serve serve-faults
 
-check: test datasets cases provenance arithmetic
+check: test datasets cases provenance arithmetic contact
 	@echo "== 门禁通过 =="
 
-# CI 档：check 去掉两项吃跑测产物的（金额出处、算式自洽）。
+# CI 档：check 去掉三项吃跑测产物的（金额出处、算式自洽、收货字段）。
 #
 # provenance 扫的是 data/conversations/（跑测产物，gitignore），
 # CI 全新 checkout 上一份流水都没有，`--report latest` 会按设计报错退出。
@@ -23,7 +23,7 @@ check: test datasets cases provenance arithmetic
 # 有 4 条测试走 load_settings()（它对缺密钥是 fail-fast 的），一个都不打上游。
 # 所以 CI 里注入占位值即可，见 .github/workflows/check.yml。
 check-ci: test datasets cases
-	@echo "== CI 门禁通过（金额出处与算式自洽需本地跑测产物，见 check）=="
+	@echo "== CI 门禁通过（金额出处 / 算式自洽 / 收货字段需本地跑测产物，见 check）=="
 
 test:
 	uv run pytest -q
@@ -54,6 +54,16 @@ provenance:
 # 没有"这轮抖了一下"的解释空间，也就没有摊薄它的口径（踩坑 45 同一面）。
 arithmetic:
 	uv run python scripts/eval/audit_arithmetic.py --report latest --gate
+
+# 收货字段出处：回复里的地址 / 电话 / 邮编，买家没给过、工具没返回过就不许出现。
+#
+# 口径同算式自洽（不设阈值、不设样本量下限，命中一处即红），理由也同一条：
+# "编造了一个收货地址"是能指着原文说"这个地址不存在"的事实错误，
+# 不是可以被样本量摊薄的比率。二十期 `clarify-missing-address` 那次，
+# Agent 写的是"您之前的记录是上海市浦东新区世纪大道100号"——**一个金额都没有**，
+# 前两条扫描完全无感，所以必须是第三条独立判据。
+contact:
+	uv run python scripts/eval/audit_contact_provenance.py --report latest --gate
 
 # —— 以下带真实 LLM 成本，不进 check ——
 

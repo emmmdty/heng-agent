@@ -228,3 +228,70 @@ class TestPreferenceHintDoesNotHijackTheTurn:
         assert "不是买家本轮" in hint or "不要对本段作答" in hint, (
             "块内要自证身份：它是背景资料，不是这一轮的问题"
         )
+
+
+class TestContactProvenanceWiring:
+    """收货字段出处校验的接线（二十期实测缺陷 `clarify-missing-address`）。
+
+    判定逻辑本身在 tests/test_contact_provenance.py 里测；这里测的是**接线**
+    ——判定器有没有真的挂在轮次边界上、告警有没有真的进事件流与落盘轨迹。
+    与金额出处校验分开测的理由完全相同（见本文件开头）。
+    """
+
+    async def test_fabricated_address_raises_warning_event(self):
+        """真实 bad case 复现：本轮只检索过商品，地址是编的，还说成"您之前的记录"。"""
+        events = await _run(
+            "收货地址：您之前的记录是上海市浦东新区世纪大道100号，这次还是这个地址吗？",
+            [{"tool": "product_search_tool", "hits": [{"product_id": "P1008"}]}],
+            raw_query="帮我下单 2 个 LumenGo 露营灯军绿色。",
+        )
+
+        warnings = [e for e in events if e.type == "contact.unsourced"]
+        assert warnings, "编造的收货地址必须发告警事件，否则等于没接线"
+        (item,) = warnings[0].payload["unsourced"]
+        assert item["kind"] == "address"
+        assert item["raw"] == "上海市浦东新区世纪大道100号"
+
+    async def test_asking_for_the_address_raises_nothing(self):
+        """这条用例要的正是"去问"——判据不能反过来罚正确行为。"""
+        events = await _run(
+            "还需要您提供收货地址、收件人和联系电话，我才能下单。",
+            [{"tool": "product_search_tool", "hits": [{"product_id": "P1008"}]}],
+            raw_query="帮我下单 2 个 LumenGo 露营灯军绿色。",
+        )
+        assert not [e for e in events if e.type == "contact.unsourced"]
+
+    async def test_address_the_buyer_gave_raises_nothing(self):
+        events = await _run(
+            "好的，寄到上海市浦东新区世纪大道100号。",
+            [],
+            raw_query="寄到浦东世纪大道100号，帮我下单",
+        )
+        assert not [e for e in events if e.type == "contact.unsourced"]
+
+    async def test_warning_lands_in_persisted_trace(self, tmp_path):
+        """告警必须进落盘轨迹——离线审计与 bad case 回收都从这里读。"""
+        from app.infrastructure.persistence.json_file_stores import JsonFileConversationStore
+
+        bus = TradeEventBus()
+        session_id = "s-contact-trace"
+        store = JsonFileConversationStore(tmp_path)
+        agent = FakeAgent(
+            bus=bus, session_id=session_id,
+            reply_text="收货地址：您之前的记录是上海市浦东新区世纪大道100号。",
+            tool_results=[{"tool": "product_search_tool", "hits": [{"product_id": "P1008"}]}],
+        )
+        orchestrator = MainAgentOrchestrator(
+            sessions=FakeRegistry(agent), bus=bus,
+            preference_store=NullPreferenceStore(), conversation_store=store,
+        )
+        await orchestrator.handle_intent(
+            SubmitIntentInput(
+                shopping_session_id=session_id, buyer_id="b1",
+                locale="zh-CN", currency="CNY", raw_query="帮我下单 2 个 LumenGo 露营灯军绿色。",
+            ),
+        )
+
+        lines = (tmp_path / "conversations" / f"{session_id}.jsonl").read_text(encoding="utf-8").splitlines()
+        kinds = [json.loads(line).get("type") for line in lines if line.strip()]
+        assert "contact.unsourced" in kinds

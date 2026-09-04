@@ -116,6 +116,8 @@ class ProductCard:
     # 目标币种折算价：仅当商品原生币种 != 买家口径币种时才有，同币种不重复发
     price_in_target_major: Optional[float] = None
     target_currency: str = ""
+    # 买家点名要、而本商品**显式声明不具备**的属性。None = 无冲突（不发这个字段）
+    attribute_mismatch: Optional[dict] = None
 
     def to_dict(self) -> dict:
         card = {
@@ -135,6 +137,8 @@ class ProductCard:
             card["target_currency"] = self.target_currency
         if self.landed_price is not None:
             card["landed_price"] = self.landed_price
+        if self.attribute_mismatch is not None:
+            card["attribute_mismatch"] = self.attribute_mismatch
         return card
 
 
@@ -548,4 +552,38 @@ class CatalogSearchUseCase:
                 else None
             ),
             target_currency=spec.target_currency,
+            attribute_mismatch=self._attribute_mismatch(product, spec),
         )
+
+    @staticmethod
+    def _attribute_mismatch(product: Product, spec: ProductSearchSpec) -> Optional[dict]:
+        """买家点名要、而本商品显式声明不具备的属性——**结构化地**说出来。
+
+        来源（二十期整轮实测 `conflict-budget-spec`）：买家要"顶配的主动降噪耳机"，
+        模型把只有通话降噪的半入耳款列在"库里有的主动降噪耳机"标题下。
+        卡片上那句"仅通话降噪（麦克风侧），无主动降噪 ANC"**当时就在**——
+        它是散文，模型可以不当回事。
+
+        前两次修都在动召回，都没拦住（写进 description 反而让 BM25 召回更强；
+        改成不可检索的 highlight 压住了字面路，向量路照样召回）。
+        这一次动的是返回结构，理由是四次成功先例的共同点——`filtered_out`、
+        `combine_hint`、`ship_to_unsupported`、`taxable_base_major` 给的都是
+        **结构化字段**。同一条老纪律的第五次应用：缺失的信息要显式化，
+        而且要显式成模型没法忽略的形状。
+
+        note 里带上"该怎么办"而不只是"是什么"：只说"不具备"，模型仍可能把它
+        当成一个可以商量的次优选项——十期那次它拿着一句"这些商品不发欧盟"
+        直接告诉了买家（工具的错误信息要能让模型自纠）。
+        """
+        missing = product.missing_attributes_for(spec.normalized_query)
+        if not missing:
+            return None
+        joined = "、".join(missing)
+        return {
+            "missing": missing,
+            "note": (
+                f"买家点名要的「{joined}」，本商品**明确不具备**。"
+                f"不得把它列为具备该属性的候选，也不得暗示加价/换规格就能获得；"
+                f"要推荐它，必须同时说明它不具备{joined}。"
+            ),
+        }

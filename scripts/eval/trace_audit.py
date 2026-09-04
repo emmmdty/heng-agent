@@ -37,6 +37,7 @@ RUNTIME_WARNING_EVENT = "number.unsourced"
 # 算式自洽校验的告警（十九期）。与上面那条分开收：两者抓的是互补的两类错，
 # 混在一起会让"这次补判才发现"的判断跟着串味。
 ARITHMETIC_WARNING_EVENT = "arith.inconsistent"
+CONTACT_WARNING_EVENT = "contact.unsourced"
 
 
 @dataclass
@@ -47,6 +48,7 @@ class SessionTrace:
     tool_results: list[dict] = field(default_factory=list)
     runtime_warnings: list[dict] = field(default_factory=list)
     arith_warnings: list[dict] = field(default_factory=list)
+    contact_warnings: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -89,6 +91,8 @@ def load_session(path: Path) -> SessionTrace:
                 trace.runtime_warnings.append(record.get("payload") or {})
             elif record.get("type") == ARITHMETIC_WARNING_EVENT:
                 trace.arith_warnings.append(record.get("payload") or {})
+            elif record.get("type") == CONTACT_WARNING_EVENT:
+                trace.contact_warnings.append(record.get("payload") or {})
     return trace
 
 

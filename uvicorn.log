@@ -1,0 +1,18 @@
+INFO:     Started server process [6718]
+INFO:     Waiting for application startup.
+2026-09-04 12:55:48,451 INFO app.composition 队列未启用，意图在当前进程内直接执行
+2026-09-04 12:55:48,452 INFO app.composition 持久化形态：本地 JSON 文件（DATABASE_URL=file）
+2026-09-04 12:55:49,009 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:55:49,576 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:55:50,830 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:55:52,177 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:55:53,644 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:55:54,595 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:55:55,719 INFO app.infrastructure.vector.index_bootstrap 向量索引就绪：60 个商品（dim=1024）
+2026-09-04 12:55:55,720 INFO app.composition BM25 字面索引就绪
+2026-09-04 12:55:55,728 INFO app.infrastructure.rag.category_knowledge 品类知识库就绪：新增 0 篇，累计 5 篇
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-09-04 12:56:11,974 INFO httpx HTTP Request: POST http://127.0.0.1:11436/v1/embeddings "HTTP/1.1 200 OK"
+2026-09-04 12:56:12,187 INFO httpx HTTP Request: GET http://127.0.0.1:11437/health "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60471 - "GET /health?deep=1 HTTP/1.1" 200 OK
