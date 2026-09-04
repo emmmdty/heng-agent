@@ -40,6 +40,7 @@ from app.infrastructure.persistence.in_memory_repositories import (  # noqa: E40
 )
 
 _CASES = Path("eval/cases.yaml")
+CASES_PATH = _CASES  # 供测试引用，避免测试里再写死一次路径
 # 品牌词按连续 ASCII 词提取；长度 >= 4 用来滤掉 USD / 65W 这类噪声
 _BRAND_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]{3,}")
 _PRODUCT_ID = re.compile(r"P\d{4}")
@@ -164,6 +165,69 @@ def _unknown_fault_components(cases: list[dict]) -> list[tuple[str, list[str], l
     return found
 
 
+
+# ---- 判据里写死的免税额度 vs 规则表 ----
+#
+# 规则表改了、判据没跟着改，外观是"Agent 答错了"，而且判词言之凿凿。
+# 2026-09-04 实测：JP 额度十一期就从 500 改成了 480（原生 10,000 JPY），
+# `stock-last-few-honesty` 的两条 P0 却一直写着 500，直到隧道恢复后的那一轮
+# 才炸出来——Agent 答的 612.48 与工具逐位一致，被判 FAIL 0.667。
+#
+# 解析刻意窄：只认"免税额度"后面**直接**跟的数额。
+# "超出免税额度的 1829 元""免税额度部分 29 元"说的是超出部分不是额度，
+# 一律不解析——宁可漏报，不要一个会误伤的检查（同算式自洽那条纪律）。
+_DE_MINIMIS_CONNECTOR = r"(?:必须报成|报成|应为|为|是|：|:)?\s*[（(]?\s*"
+_AMOUNT_UNIT = r"([\d][\d,]*(?:\.\d+)?)\s*(元|美元|欧元|日元|新元|CNY|USD|EUR|JPY|SGD)"
+_DE_MINIMIS_HEAD = re.compile("免税额度" + _DE_MINIMIS_CONNECTOR + _AMOUNT_UNIT)
+_AMOUNT_TAIL = re.compile(r"\s*[/、]\s*" + _AMOUNT_UNIT)
+
+
+def de_minimis_claims(text: str) -> list[tuple[float, str]]:
+    """抽出判据里对免税额度**本身**的断言，返回 (数额, 单位) 列表。"""
+    claims: list[tuple[float, str]] = []
+    for match in _DE_MINIMIS_HEAD.finditer(text or ""):
+        claims.append((float(match.group(1).replace(",", "")), match.group(2)))
+        pos = match.end()
+        # "1170 元 / 150 欧元"这种并列口径，后面几个也要一起校
+        while (tail := _AMOUNT_TAIL.match(text, pos)) is not None:
+            claims.append((float(tail.group(1).replace(",", "")), tail.group(2)))
+            pos = tail.end()
+        # "480 元（原生口径 10,000 JPY）"：括号里的原生口径同样是对额度的断言
+        rest = text[pos:pos + 40]
+        if rest.startswith("（") or rest.startswith("("):
+            for extra in re.finditer(_AMOUNT_UNIT, rest.split("）")[0].split(")")[0]):
+                claims.append((float(extra.group(1).replace(",", "")), extra.group(2)))
+    return claims
+
+
+def known_de_minimis_amounts() -> set[float]:
+    """规则表认得的全部免税额度口径：原生币种一份，折成人民币一份。"""
+    from app.domain.catalog.exchange_rate import ExchangeRateTable
+    from app.domain.shipping.tariff_schedule import _DE_MINIMIS_NATIVE, TariffSchedule
+
+    schedule = TariffSchedule(rates=ExchangeRateTable())
+    amounts: set[float] = set()
+    for ship_to in _DE_MINIMIS_NATIVE:
+        native = schedule.de_minimis_native(ship_to)
+        in_cny = schedule.de_minimis(ship_to, "CNY")
+        amounts.add(float(native.to_major()) if hasattr(native, "to_major") else float(str(native).split()[0]))
+        amounts.add(float(in_cny.to_major()) if hasattr(in_cny, "to_major") else float(str(in_cny).split()[0]))
+    return amounts
+
+
+def stale_de_minimis(cases: list[dict]) -> list[tuple[str, str, float, str]]:
+    """判据里与规则表对不上的免税额度。"""
+    known = known_de_minimis_amounts()
+    found: list[tuple[str, str, float, str]] = []
+    for case in cases:
+        for level, items in (case.get("rubric") or {}).items():
+            for text in items or []:
+                for amount, unit in de_minimis_claims(text):
+                    if amount not in known:
+                        found.append((case["id"], level, amount, unit))
+    return found
+
+
 async def main() -> int:
     products = await InMemoryProductRepository().list_all()
     cases = yaml.safe_load(_CASES.read_text(encoding="utf-8"))["cases"]
@@ -196,11 +260,14 @@ async def main() -> int:
 
     bad_faults = _unknown_fault_components(cases)
     dangling = _dangling_requires(cases)
+    stale_amounts = stale_de_minimis(cases)
 
     print(f"{_CASES}：{len(cases)} 条用例，商品库 {len(products)} 个 SPU\n")
-    if not problems and not mismatches and not partial_pins and not bad_faults and not dangling:
+    if (not problems and not mismatches and not partial_pins
+            and not bad_faults and not dangling and not stale_amounts):
         print("用例自检通过：每个品牌指代都能由 query 收敛到唯一商品，"
-              "或被显式点名做对比且 rubric 已逐一钉住")
+              "或被显式点名做对比且 rubric 已逐一钉住；"
+              "判据里写死的免税额度与规则表一致")
         return 0
 
     for case_id, brand, matched, pinned, resolution in problems:
@@ -225,6 +292,13 @@ async def main() -> int:
         print(f"[{case_id}] 声明了未知的故障组件 {unknown}，可选：{supported}——"
               f"拼错的组件名会让服务端 400，整条用例判 ERROR，"
               f"而这要等到跑测时才发现（一轮 60-90 分钟）\n")
+
+    for case_id, level, amount, unit in stale_amounts:
+        print(f"[{case_id}] {level} 里写着免税额度 {amount:g}{unit}，规则表里没有这个口径——"
+              f"规则表改了而判据没跟着改，外观是「Agent 答错了」且判词言之凿凿"
+              f"（2026-09-04 实测：JP 额度十一期就从 500 改成 480，判据一直没改，"
+              f"Agent 答对了却判 FAIL 0.667）。可用口径："
+              f"{sorted(known_de_minimis_amounts())}\n")
 
     for case_id, missing in dangling:
         print(f"[{case_id}] requires 指向了不存在或排在它后面的用例 {missing}——"
