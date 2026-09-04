@@ -6,9 +6,9 @@
 #
 # make 遇到非零退出码即中断，六个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check check-ci test datasets cases provenance arithmetic contact eval eval-smoke variance health serve serve-faults
+.PHONY: check check-ci test datasets cases provenance arithmetic contact basket knowledge eval eval-smoke variance health serve serve-faults
 
-check: test datasets cases provenance arithmetic contact
+check: test datasets cases provenance arithmetic contact basket knowledge
 	@echo "== 门禁通过 =="
 
 # CI 档：check 去掉三项吃跑测产物的（金额出处、算式自洽、收货字段）。
@@ -64,6 +64,25 @@ arithmetic:
 # 前两条扫描完全无感，所以必须是第三条独立判据。
 contact:
 	uv run python scripts/eval/audit_contact_provenance.py --report latest --gate
+
+# 组合总价错加（basket_misadd）：单品到手价相加被当作组合总价，即运费重复计。
+#
+# 口径同算式自洽、收货字段：不设阈值、不设样本量下限，命中一处即红——
+# "这行把组合总价算错了"是能指着原文说的事实错误。
+# 但注意它有一条前置：会话内存在 quote_basket 报价才有 ground truth，
+# 没有报价时判据只作线索、不判罪；所以"0 违规"分两种，
+# 判词会写明是"判过了、全对"还是"压根没东西可判"（踩坑 33）。
+basket:
+	uv run python scripts/eval/audit_basket_sum.py --report latest --gate
+
+# 知识库出处：声称"来自知识库 / 品类洞察"的内容，本会话必须真有过成功返回。
+#
+# 口径同算式自洽、收货字段、basket：不设阈值、不设样本量下限，命中一处即红。
+# "知识库根本没返回过，回复却说'知识库里说'"是能指着原文说的张冠李戴。
+# 判据刻意窄：只认"知识库 / 品类洞察"字样的归因构型，能力提议、缺失观察
+# （"知识库里没有 X"）与诚实降级（"知识库暂时不可用"）都不算声明。
+knowledge:
+	uv run python scripts/eval/audit_knowledge_provenance.py --report latest --gate
 
 # —— 以下带真实 LLM 成本，不进 check ——
 
