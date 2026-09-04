@@ -269,6 +269,68 @@ class TestContactProvenanceWiring:
         )
         assert not [e for e in events if e.type == "contact.unsourced"]
 
+
+class TestKnowledgeProvenanceWiring:
+    """知识库出处校验的接线（交接文档"第一点五优先"欠了半个期的那半）。
+
+    判定逻辑在 tests/test_knowledge_provenance.py；这里钉的是接线——
+    "写完了没接上"与"故意不做"外观完全一样（BM25 教训），必须有一条测试钉住。
+    """
+
+    async def test_claim_without_kb_return_raises_warning_event(self):
+        events = await _run(
+            "根据知识库，这个品类最看重材质和容量。",
+            [{"tool": "product_search_tool", "hits": [{"product_id": "P1001"}]}],
+        )
+        warnings = [e for e in events if e.type == "knowledge.unsourced"]
+        assert warnings, "无据的知识库声明必须发告警事件，否则等于没接线"
+        (item,) = warnings[0].payload["unsourced"]
+
+    async def test_claim_with_successful_kb_return_raises_nothing(self):
+        events = await _run(
+            "知识库里说这个品类先看材质。",
+            [{
+                "tool": "category_insight_tool", "hit_count": 1,
+                "insights": [{"content": "先看材质", "source": "travel-gear.md"}],
+            }],
+        )
+        assert not [e for e in events if e.type == "knowledge.unsourced"]
+
+    async def test_honest_degradation_raises_nothing(self):
+        """工具报错后如实告知不可用是唯一正确的行为，不能反罚。"""
+        events = await _run(
+            "知识库暂时不可用，我先按常识给您讲。",
+            [{"tool": "category_insight_tool", "error": "索引未就绪"}],
+        )
+        assert not [e for e in events if e.type == "knowledge.unsourced"]
+
+    async def test_warning_lands_in_persisted_trace(self, tmp_path):
+        """告警必须进落盘轨迹——离线审计与 bad case 回收都从这里读。"""
+        from app.infrastructure.persistence.json_file_stores import JsonFileConversationStore
+
+        bus = TradeEventBus()
+        session_id = "s-knowledge-trace"
+        store = JsonFileConversationStore(tmp_path)
+        agent = FakeAgent(
+            bus=bus, session_id=session_id,
+            reply_text="根据知识库，这个品类先看材质。",
+            tool_results=[{"tool": "product_search_tool", "hits": [{"product_id": "P1001"}]}],
+        )
+        orchestrator = MainAgentOrchestrator(
+            sessions=FakeRegistry(agent), bus=bus, preference_store=NullPreferenceStore(),
+            conversation_store=store,
+        )
+        await orchestrator.handle_intent(
+            SubmitIntentInput(
+                shopping_session_id=session_id, buyer_id="b1",
+                locale="zh-CN", currency="CNY", raw_query="这个品类怎么挑",
+            ),
+        )
+
+        lines = (tmp_path / "conversations" / f"{session_id}.jsonl").read_text(encoding="utf-8").splitlines()
+        kinds = [json.loads(line).get("type") for line in lines if line.strip()]
+        assert "knowledge.unsourced" in kinds
+
     async def test_warning_lands_in_persisted_trace(self, tmp_path):
         """告警必须进落盘轨迹——离线审计与 bad case 回收都从这里读。"""
         from app.infrastructure.persistence.json_file_stores import JsonFileConversationStore

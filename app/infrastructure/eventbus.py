@@ -16,6 +16,7 @@ Presentation 层按 shopping_session_id 订阅后推送给前端 WebSocket。
     number.unsourced    回复里出现了没有工具出处的金额（五期：金额出处校验）
     arith.inconsistent  回复里写出来的算式等号两边对不上（十九期：算式自洽）
     contact.unsourced   回复里出现了买家没给过、工具也没返回过的收货字段（二十一期）
+    knowledge.unsourced 回复声称内容来自知识库，而本会话没有成功的知识库返回（二十二期）
     task.queued         意图已入队，等待 worker 领取（四期）
     task.started        worker 已开始处理（四期）
     final.result        最终回复
@@ -42,6 +43,7 @@ EVENT_TYPES = (
     "number.unsourced",
     "arith.inconsistent",
     "contact.unsourced",
+    "knowledge.unsourced",
     "task.queued",
     "task.started",
     "final.result",

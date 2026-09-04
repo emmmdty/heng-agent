@@ -38,6 +38,7 @@ RUNTIME_WARNING_EVENT = "number.unsourced"
 # 混在一起会让"这次补判才发现"的判断跟着串味。
 ARITHMETIC_WARNING_EVENT = "arith.inconsistent"
 CONTACT_WARNING_EVENT = "contact.unsourced"
+KNOWLEDGE_WARNING_EVENT = "knowledge.unsourced"
 
 
 @dataclass
@@ -49,6 +50,7 @@ class SessionTrace:
     runtime_warnings: list[dict] = field(default_factory=list)
     arith_warnings: list[dict] = field(default_factory=list)
     contact_warnings: list[dict] = field(default_factory=list)
+    knowledge_warnings: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +95,8 @@ def load_session(path: Path) -> SessionTrace:
                 trace.arith_warnings.append(record.get("payload") or {})
             elif record.get("type") == CONTACT_WARNING_EVENT:
                 trace.contact_warnings.append(record.get("payload") or {})
+            elif record.get("type") == KNOWLEDGE_WARNING_EVENT:
+                trace.knowledge_warnings.append(record.get("payload") or {})
     return trace
 
 

@@ -44,6 +44,10 @@ from app.application.harness.contact_provenance import (
     check_contact,
 )
 from app.application.harness.number_provenance import SessionSources, check_reply
+from app.application.harness.knowledge_provenance import (
+    SessionKnowledgeSources,
+    check_knowledge,
+)
 from app.application.memory.preference_selector import (
     PreferenceSelector,
     render_preference_hint,
@@ -142,6 +146,12 @@ class MainAgentOrchestrator:
         # 同样在本类内部构造，不做成可选依赖，理由见上一行。
         self._contact_sources = (
             SessionContactSources() if number_provenance_enabled else None
+        )
+        # 知识库出处：同一开关。管的是"选购常识的出处从哪来"——模型把
+        # 自己的常识安上"知识库"的名头说出去，买家无从分辨。同样在本类
+        # 内部构造，理由同上。
+        self._knowledge_sources = (
+            SessionKnowledgeSources() if number_provenance_enabled else None
         )
 
     def _guard_final_text(self, session_id: str, text: str) -> str:
@@ -245,6 +255,9 @@ class MainAgentOrchestrator:
                 # 收货字段出处：与金额出处并列，抓的是"买家没给过的个人信息
                 # 被写进了回复"。同样跳过缓存命中的轮次。
                 self._check_contact_provenance(intent, final_text, events)
+                # 知识库出处：抓的是"内容声称来自知识库，而本会话根本
+                # 没有过成功的知识库返回"。同样跳过缓存命中的轮次。
+                self._check_knowledge_provenance(intent, final_text, events)
             await self._record_conversation(
                 intent, final_text, int((time.monotonic() - started_at) * 1000), events,
             )
@@ -443,6 +456,41 @@ class MainAgentOrchestrator:
         events.append(
             ConversationEventRecord(
                 session_id=session_id, type="contact.unsourced", payload=payload,
+            ),
+        )
+
+    def _check_knowledge_provenance(
+        self,
+        intent: SubmitIntentInput,
+        final_text: str,
+        events: list[ConversationEventRecord],
+    ) -> None:
+        """轮末知识库出处校验：声称"来自知识库 / 品类洞察"就必须真有过成功返回。
+
+        与另外三条轮末判据并列、同样**只告警不改写**（改写来不及，
+        误报的代价是打回正确回复）。出处状态只认工具返回——买家原话里
+        提到"知识库"不会让声明变得有据。
+        """
+        if self._knowledge_sources is None:
+            return
+        session_id = intent.shopping_session_id
+        self._knowledge_sources.observe(
+            session_id,
+            tool_results=[event.payload for event in events if event.type == "tool.result"],
+        )
+        report = check_knowledge(final_text, self._knowledge_sources.of(session_id))
+        if report.clean:
+            return
+        payload = {"message": "回复声称内容来自知识库，但本会话没有成功的知识库返回", **report.to_dict()}
+        logger.warning(
+            "知识库出处校验命中（会话 %s）：%s",
+            session_id,
+            [item.raw for item in report.unsourced],
+        )
+        self._bus.publish(session_id, "knowledge.unsourced", payload)
+        events.append(
+            ConversationEventRecord(
+                session_id=session_id, type="knowledge.unsourced", payload=payload,
             ),
         )
 
