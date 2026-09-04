@@ -34,6 +34,9 @@ from app.application.harness.number_provenance import (  # noqa: E402
 
 # 运行时护栏发出的告警事件类型（离线侧据此区分"当时就发现了"与"这次补判才发现"）
 RUNTIME_WARNING_EVENT = "number.unsourced"
+# 算式自洽校验的告警（十九期）。与上面那条分开收：两者抓的是互补的两类错，
+# 混在一起会让"这次补判才发现"的判断跟着串味。
+ARITHMETIC_WARNING_EVENT = "arith.inconsistent"
 
 
 @dataclass
@@ -43,6 +46,7 @@ class SessionTrace:
     agent_replies: list[str] = field(default_factory=list)
     tool_results: list[dict] = field(default_factory=list)
     runtime_warnings: list[dict] = field(default_factory=list)
+    arith_warnings: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -83,6 +87,8 @@ def load_session(path: Path) -> SessionTrace:
                 trace.tool_results.append(record.get("payload") or {})
             elif record.get("type") == RUNTIME_WARNING_EVENT:
                 trace.runtime_warnings.append(record.get("payload") or {})
+            elif record.get("type") == ARITHMETIC_WARNING_EVENT:
+                trace.arith_warnings.append(record.get("payload") or {})
     return trace
 
 

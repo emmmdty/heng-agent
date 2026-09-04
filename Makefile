@@ -1,17 +1,17 @@
 # Globex 提交前门禁。
 #
-# check 里的四项全部是**零 LLM 成本**的确定性检查，加起来十几秒，
+# check 里的五项全部是**零 LLM 成本**的确定性检查，加起来十几秒，
 # 所以约定是「每次提交前必跑」，而不是「想起来再跑」。
 # 真正烧钱的端到端 Rubric 回归（eval / eval-smoke）不在 check 里，单独手动跑。
 #
-# make 遇到非零退出码即中断，四个脚本的退出码都已对齐（0 通过 / 1 不通过）。
+# make 遇到非零退出码即中断，五个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check check-ci test datasets cases provenance eval eval-smoke variance health serve serve-faults
+.PHONY: check check-ci test datasets cases provenance arithmetic eval eval-smoke variance health serve serve-faults
 
-check: test datasets cases provenance
+check: test datasets cases provenance arithmetic
 	@echo "== 门禁通过 =="
 
-# CI 档：check 去掉金额出处那一项。
+# CI 档：check 去掉两项吃跑测产物的（金额出处、算式自洽）。
 #
 # provenance 扫的是 data/conversations/（跑测产物，gitignore），
 # CI 全新 checkout 上一份流水都没有，`--report latest` 会按设计报错退出。
@@ -23,7 +23,7 @@ check: test datasets cases provenance
 # 有 4 条测试走 load_settings()（它对缺密钥是 fail-fast 的），一个都不打上游。
 # 所以 CI 里注入占位值即可，见 .github/workflows/check.yml。
 check-ci: test datasets cases
-	@echo "== CI 门禁通过（金额出处项需本地跑测产物，见 check）=="
+	@echo "== CI 门禁通过（金额出处与算式自洽需本地跑测产物，见 check）=="
 
 test:
 	uv run pytest -q
@@ -45,6 +45,15 @@ PROVENANCE_MAX_RATIO ?= 0.08
 # 阈值只能跟着调，门禁很快就废了。
 provenance:
 	uv run python scripts/eval/audit_number_provenance.py --report latest --max-ratio $(PROVENANCE_MAX_RATIO)
+
+# 算式自洽：回复里显式写出的 `A × B% = C` 得算得通。
+#
+# 与 provenance 并列但**口径不同：不设阈值、不设样本量下限，命中一处即红**。
+# 无出处金额率是比率（修辞取整本来就占几个点），小样本不判定是对的；
+# 而 886.34 × 7.5% = 6.48 是能指着原文说"这一行算错了"的事实错误，
+# 没有"这轮抖了一下"的解释空间，也就没有摊薄它的口径（踩坑 45 同一面）。
+arithmetic:
+	uv run python scripts/eval/audit_arithmetic.py --report latest --gate
 
 # —— 以下带真实 LLM 成本，不进 check ——
 
