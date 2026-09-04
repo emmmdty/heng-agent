@@ -12,3 +12,4 @@ eval/partial-*.json
 eval/recall-report-*.md
 eval/category-recall-report-*.md
 # bad_cases.jsonl 反过来必须入库：它是人工分诊结果的载体，丢了等于分诊白做
+uvicorn.log
