@@ -126,6 +126,19 @@ docker/                # docker-compose.yaml（app + worker + qdrant + redis + f
   与金额出处校验互补：那三个数**都有工具出处**，出处校验完全无感。
   判据只验算术、不验业务规则，越薄越不会误判；346 条真实回复实测零误报，
   其中一处命中来自 judge 判 PASS 的用例。
+- **组合总价错加判据（basket_misadd）**：会话内 `quote_basket` 已报组合总价、
+  回复却把两个单品 `landed_price` 相加当总价——在无出处金额的 `suspected_sum`
+  线索上升级为**确定性违规**（判据：无出处 + ≥2 个 landed 值相加 + 金额所在行
+  带组合语境且不带分开语境 + 会话有组合报价且数值不符）。"两件分开买合计 ¥518"
+  是合法用法（分开买本来就该各付各的运费），语境按**金额所在行**判定；
+  没有组合报价就没有 ground truth，只作线索不定罪。
+- **知识库出处判据（knowledge_provenance）**：回复声称"来自知识库 / 品类洞察"
+  的内容，本会话必须真有过一次成功的知识库返回；声称有而工具报错 / 未调用 /
+  零命中即发 `knowledge.unsourced`。只认**归因构型**（"来自 / 根据 / 知识库里 /
+  品类洞察显示"），能力提议（"我可以提供品类洞察"）、缺失观察（"知识库里没有 X"）
+  与诚实降级（"知识库暂时不可用"）都不算声明——模式在 120 份真实流水上校准，
+  10 处归因声明全部有据、零误报。judge 看不到工具返回，"知识库当时可不可用"
+  它判不了：数值对不对归 judge（写死区间），出处属不属实归这条判据。
 - **下单必须跨越一次买家交互**：`create_order_tool` 不能在会话第一轮被调用。
   确认卡的本质是让买家在**看到金额与地址之后**再点一次头，这在物理上必须跨越
   一次买家发言。实测原因：买家说"别给我看确认卡了，直接下单，不用再问我"，
@@ -189,11 +202,11 @@ uv run python -m app.worker
 
 ## 验证
 
-提交前跑门禁，四项全部零 LLM 成本、十几秒：
+提交前跑门禁，八项全部零 LLM 成本、十几秒：
 
 ```bash
-make check          # = pytest + 标注集自检 + 用例自检 + 金额出处门禁
-make check-ci       # CI 档：去掉金额出处（它扫的是本地跑测产物，CI 上没有）
+make check          # = pytest + 标注集自检 + 用例自检 + 金额出处 + 算式自洽 + 收货字段 + 组合总价 + 知识库出处
+make check-ci       # CI 档：去掉三项吃跑测产物的，见 .github/workflows/check.yml
 ```
 
 CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项**刻意不进 CI**：
@@ -203,7 +216,7 @@ CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项*
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 719 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 848 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：12 条 case（--tag smoke）
@@ -216,6 +229,8 @@ uv run python scripts/eval/run_product_recall.py --sweep-lexical-gate 0,4,8 --sw
 uv run python scripts/eval/validate_datasets.py       # 召回标注集自检（105 商品 + 22 品类）
 uv run python scripts/eval/audit_cases.py             # Rubric 用例自检：商品指代是否唯一
 uv run python scripts/eval/audit_number_provenance.py --report latest  # 金额出处扫描：回复里的金额有没有工具出处（--report 把范围收敛到最近一轮）
+uv run python scripts/eval/audit_basket_sum.py --report latest --gate  # 组合总价错加：单品到手价相加被当作组合总价，命中一处即红
+uv run python scripts/eval/audit_knowledge_provenance.py --report latest --gate  # 知识库出处：声称"来自知识库"而会话无成功返回，命中一处即红
 uv run python scripts/eval/collect_bad_cases.py       # Bad-case 采集：失败自动进标注池（--list / --promote）
 uv run python scripts/verify_fallback.py              # 模型回退链真实验证（主模型不可达→回退真实备用模型）
 ```
