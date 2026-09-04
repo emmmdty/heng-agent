@@ -24,12 +24,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 from collections import defaultdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EVAL_DIR = PROJECT_ROOT / "eval"
+
+# 代码新鲜度段的可变部分：启动时刻、过期文件清单、最新 mtime。
+# 只保留"新鲜 / 已过期"这个语义标记——跑在旧代码上的轮次不该混进来，
+# 但"几点启动的"不是配置，留着它同配置的轮次就永远进不了同一组
+# （本工具建成以来从未真正出过组，根因就是它）。
+_CODE_SEGMENT = re.compile(r"^代码 (新鲜|⚠️已过期)")
 
 
 def load_reports(directory: Path) -> list[dict]:
@@ -45,11 +52,17 @@ def load_reports(directory: Path) -> list[dict]:
 def config_key(report: dict) -> str:
     """把配置行里"会影响分数"的部分抽出来当分组键。
 
-    评审模型不进键：它写在同一行里，但换 judge 等于换尺子——
-    真要比较不同 judge 的读数，那是另一个问题，不该混进方差里。
-    所以这里把整行原样当键，最保守：配置行只要有一个字不同就分开算。
+    配置行是 `A｜B｜C` 的分段结构，按段归一：
+    代码段只留"新鲜 / 已过期"（启动时刻与过期文件清单剔掉——不是配置）；
+    其余段逐字保留，最保守：评审模型、探活结果、故障注入任何一处不同都分开算。
+    换 judge 等于换尺子，真要比较不同 judge 的读数是另一个问题，不混进方差里。
     """
-    return str(report.get("run") or "未知配置")
+    line = str(report.get("run") or "未知配置")
+    segments = []
+    for segment in line.split("｜"):
+        match = _CODE_SEGMENT.match(segment)
+        segments.append(f"代码 {match.group(1).replace('⚠️', '')}" if match else segment)
+    return "｜".join(segments)
 
 
 def collect_scores(
