@@ -111,6 +111,42 @@ class TestSearchResultCarriesTheMismatch:
         assert card["attribute_mismatch"]["missing"] == ["主动降噪"]
 
 
+class TestFilteredOutCarriesTheMismatchToo:
+    """被硬约束挡掉的候选**同样**要带声明——而且这条比 hits 更要紧。
+
+    二十一期定向重跑第三轮实测（`report-20260904-131821`，FAIL 0.75）：
+    买家说"预算 200 元"，于是 299 元的 AeroHush Lite 被 `over_price_cap` 挡进
+    `filtered_out`；而 `_to_rejected()` 只回 product_id / title / category /
+    price / reason，**结构化声明根本没到模型手上**。模型照旧写出
+    "它支持主动降噪，是目前最接近你预算的选项"。
+
+    这条用例里那款商品**必然**在 filtered_out 里——预算冲突正是它被挡的原因。
+    只给 hits 加字段等于给这条用例修了一条它走不到的路：
+    与"BM25 索引只在评测脚本里构造、从没接进 composition"（经验 1）同一形状，
+    **修在了模型走不到的那条路上，外观与修好了完全一样**。
+    """
+
+    async def test_rejected_candidate_declares_the_mismatch(self):
+        use_case = _use_case()
+        result = await use_case.execute(
+            ProductSearchSpec(normalized_query="主动降噪 耳机", top_k=8, price_max_major=200.0),
+        )
+        rejected = next(
+            (r for r in result.get("filtered_out", []) if r["product_id"] == "P1022"), None,
+        )
+        assert rejected is not None, "299 元的半入耳款应被 200 元预算挡进 filtered_out"
+        assert rejected["reason"] == "over_price_cap"
+        assert rejected["attribute_mismatch"]["missing"] == ["主动降噪"]
+
+    async def test_rejected_candidate_without_conflict_has_no_field(self):
+        use_case = _use_case()
+        result = await use_case.execute(
+            ProductSearchSpec(normalized_query="蓝牙耳机", top_k=8, price_max_major=200.0),
+        )
+        for rejected in result.get("filtered_out", []):
+            assert "attribute_mismatch" not in rejected
+
+
 # —— 测试夹具 ——
 
 

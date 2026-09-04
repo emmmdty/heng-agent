@@ -292,7 +292,7 @@ class CatalogSearchUseCase:
 
     def _to_rejected(self, product: Product, spec: ProductSearchSpec, reason: str) -> dict:
         primary_in_target = self._tariff.rates.convert(product.primary_sku().price, spec.target_currency)
-        return {
+        rejected = {
             "product_id": product.product_id,
             "title": product.title,
             "category": product.category,
@@ -300,6 +300,17 @@ class CatalogSearchUseCase:
             "currency": spec.target_currency,
             "reason": reason,
         }
+        # 属性冲突声明在**被挡掉的候选上比在 hits 上更要紧**。
+        # 二十一期实测（report-20260904-131821）：买家说"预算 200 元"，
+        # 299 元的半入耳款因此被 over_price_cap 挡进 filtered_out，
+        # 而这里当时不带声明——模型照旧写出"它支持主动降噪"。
+        # `conflict-budget-spec` 这条用例里那款商品**必然**走这条路
+        # （预算冲突正是它被挡的原因），只给 hits 加字段等于修在了模型走不到的路上，
+        # 外观与修好了完全一样（经验 1 的同一形状）。
+        mismatch = self._attribute_mismatch(product, spec)
+        if mismatch is not None:
+            rejected["attribute_mismatch"] = mismatch
+        return rejected
 
     def _within_price_cap(self, product: Product, spec: ProductSearchSpec) -> bool:
         """按**最便宜的规格**判，不是按主规格。
