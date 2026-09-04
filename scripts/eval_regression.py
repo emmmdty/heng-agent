@@ -23,6 +23,7 @@ import argparse
 import asyncio
 import json
 import os
+import tempfile
 import sys
 import uuid
 from datetime import datetime
@@ -536,6 +537,42 @@ def _guard_stale_service(health: dict, allow: bool) -> None:
     )
 
 
+def _guard_ephemeral_data_dir(health: dict, allow: bool) -> None:
+    """流水落在系统临时目录里时拒绝跑回归。
+
+    2026-09-04 实测踩过一次，代价是十九期整批读数事后无法复算：
+    为了躲开 Qdrant 的单进程文件锁，把 `DATA_DIR` 指到了会话级临时目录。
+    当轮一切正常，`make check` 也绿；会话结束后目录被清理，
+    留在仓库 `eval/` 里的报告记着一个**已经不存在的 data_dir**——
+    无出处金额率、算式自洽、bad case 采集全部依赖流水，一条都算不回来了。
+
+    报告活着而它引用的证据死了，这件事在当轮没有任何症状，
+    要等到下一个人跑 `make check` 才炸，且报错指向"流水可能被清过"。
+    所以拦在开跑前：向量库要换地方是合理需求，换 `VECTOR_STORE_DIR` 即可，
+    别把证据一起搬走。
+    """
+    raw = str(health.get("data_dir") or "").strip()
+    if not raw or allow:
+        # 十五期之前的 /health 不报 data_dir——拿不到就别拦，不把老服务锁死
+        return
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    try:
+        resolved = Path(raw).resolve()
+    except OSError:
+        return
+    if temp_root not in resolved.parents:
+        return
+    raise SystemExit(
+        f"拒绝跑回归：被测服务的流水落在临时目录里。\n"
+        f"  DATA_DIR = {raw}\n"
+        f"这一轮的报告会留在仓库 eval/，而它引用的流水会随临时目录一起消失，\n"
+        f"事后无出处金额率、算式自洽、bad case 采集**一条都算不回来**。\n"
+        f"想换 Qdrant 存储躲文件锁的话，换的应该是向量库而不是证据：\n"
+        f"  VECTOR_STORE_DIR={raw}/qdrant-scratch uv run uvicorn app.presentation.server:app --port 8000\n"
+        f"确认就是要评一轮不留证据的，加 --allow-ephemeral-data-dir。",
+    )
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", default=str(PROJECT_ROOT / "eval" / "cases.yaml"))
@@ -558,6 +595,11 @@ async def main() -> None:
         help="允许在服务代码比磁盘旧的情况下跑（不推荐，评的会是修复前的行为）",
     )
     parser.add_argument(
+        "--allow-ephemeral-data-dir",
+        action="store_true",
+        help="允许流水落在临时目录（不推荐，本轮读数事后无法复算）",
+    )
+    parser.add_argument(
         "--resume",
         default=None,
         metavar="PARTIAL_JSON",
@@ -572,6 +614,7 @@ async def main() -> None:
 
     health = await _guard_semantic_cache(args.allow_semantic_cache)
     _guard_stale_service(health, args.allow_stale_service)
+    _guard_ephemeral_data_dir(health, args.allow_ephemeral_data_dir)
     run_line = describe_run(health, os.environ.get("EVAL_JUDGE_MODEL", ""))
     print(f"跑测配置：{run_line}\n", flush=True)
 

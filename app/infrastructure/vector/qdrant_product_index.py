@@ -28,7 +28,8 @@ class QdrantProductIndex(ProductVectorIndex):
         if settings.qdrant_url:
             self._client = AsyncQdrantClient(url=settings.qdrant_url)
         else:
-            local_path = settings.data_dir / "qdrant"
+            # vector_store_dir 默认就是 data_dir；单独配置后向量库挪走而流水留在原地
+            local_path = settings.vector_store_dir / "qdrant"
             local_path.parent.mkdir(parents=True, exist_ok=True)
             self._client = AsyncQdrantClient(path=str(local_path))
         self._collection = settings.qdrant_collection

@@ -95,6 +95,19 @@ class Settings:
     # 进程内会话缓存上限（LRU）。0 = 不限（十七期之前的行为）。
     # 每个缓存项是一个 Agent + 整段对话上下文，不设限时内存随会话数单调增长。
     session_cache_max: int = 200
+    # ---- 二十期：向量库落盘位置与证据落盘位置解耦 ----
+    # Qdrant 本地嵌入模式是单进程文件锁，起第二个实例就得换一份向量库存储。
+    # 此前唯一的办法是整个 DATA_DIR 换掉——而**流水也跟着换走了**：
+    # 报告留在仓库 eval/ 里、指着一个会话结束就被清理的临时目录，
+    # 那一批读数（无出处金额率、算式自洽、bad case）事后一条都无法复算。
+    # 向量库是可重建的缓存，流水是不可再生的证据，两者不该共用一个开关。
+    # None = 跟随 data_dir（单实例的默认行为）。
+    vector_store_dir_override: Path | None = None
+
+    @property
+    def vector_store_dir(self) -> Path:
+        """向量库（Qdrant 本地模式）落盘根目录。消费方只认这一个名字。"""
+        return self.vector_store_dir_override or self.data_dir
 
 
 def load_settings() -> Settings:
@@ -108,6 +121,11 @@ def load_settings() -> Settings:
         )
     data_dir = Path(os.getenv("DATA_DIR", str(PROJECT_ROOT / "data")))
     data_dir.mkdir(parents=True, exist_ok=True)  # SQLite 默认落在此目录，建库前必须存在
+    # 只想换 Qdrant 存储（躲文件锁）时配这个，别去动 DATA_DIR——流水得留在原地
+    vector_store_env = os.getenv("VECTOR_STORE_DIR", "").strip()
+    vector_store_dir = Path(vector_store_env) if vector_store_env else None
+    if vector_store_dir is not None:
+        vector_store_dir.mkdir(parents=True, exist_ok=True)
     return Settings(
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
@@ -126,6 +144,7 @@ def load_settings() -> Settings:
         tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
         otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
         data_dir=data_dir,
+        vector_store_dir_override=vector_store_dir,
         category_kb_collection=os.getenv("CATEGORY_KB_COLLECTION", "globex_category_kb"),
         context_size=int(os.getenv("CONTEXT_SIZE", "128000")),
         tool_result_limit=int(os.getenv("TOOL_RESULT_LIMIT", "20000")),

@@ -47,7 +47,7 @@ def build_category_knowledge_base(settings: Settings) -> KnowledgeBase:
     if settings.qdrant_url:
         vector_store = QdrantStore(url=settings.qdrant_url)
     else:
-        local_path = settings.data_dir / "qdrant_kb"
+        local_path = settings.vector_store_dir / "qdrant_kb"
         local_path.parent.mkdir(parents=True, exist_ok=True)
         vector_store = QdrantStore(path=str(local_path))
     return KnowledgeBase(
