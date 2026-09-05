@@ -82,10 +82,10 @@ class TestOrderLifecycle:
         product = await product_repo.find_by_id("P1001")
         assert product.find_sku("P1001-S1").stock == 48
 
-        queried = await query.execute(snapshot["order_id"])
+        queried = await query.execute(snapshot["order_id"], "buyer-1")
         assert queried["order_id"] == snapshot["order_id"]
 
-        cancelled = await cancel.execute(snapshot["order_id"], "买家改主意了")
+        cancelled = await cancel.execute(snapshot["order_id"], "买家改主意了", "buyer-1")
         assert cancelled["status"] == "CANCELLED"
         # 取消回补库存
         assert product.find_sku("P1001-S1").stock == 50
@@ -110,4 +110,4 @@ class TestOrderLifecycle:
     async def test_query_unknown_order(self, order_repo):
         query = QueryOrderUseCase(order_repo)
         with pytest.raises(ValueError, match="订单不存在"):
-            await query.execute("GBX-999999")
+            await query.execute("GBX-999999", "buyer-1")

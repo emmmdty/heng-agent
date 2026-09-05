@@ -65,15 +65,27 @@ class PlaceOrderUseCase:
         return order.snapshot()
 
 
+def _require_owned(order, order_id: str, buyer_id: str):
+    """归属校验的单一实现（审查 L1：两份逐字相同的私有方法必然漂移）。
+
+    归属不符与订单不存在对外**同读数**——可区分就是订单号枚举探测的入口。
+    """
+    if order is None or order.snapshot()["buyer_id"] != buyer_id:
+        raise ValueError(f"订单不存在：{order_id}")
+    return order
+
+
 class QueryOrderUseCase:
     def __init__(self, order_repo: OrderRepository) -> None:
         self._order_repo = order_repo
 
-    async def execute(self, order_id: str) -> dict:
+    async def execute(self, order_id: str, buyer_id: str) -> dict:
+        """查单必须校验归属（红队用例挖出的洞，二十三期清单 6）。
+
+        buyer_id 来自系统上下文，由调用方（工具/端点）注入，不接受买家声明。
+        """
         order = await self._order_repo.find_by_id(order_id)
-        if order is None:
-            raise ValueError(f"订单不存在：{order_id}")
-        return order.snapshot()
+        return _require_owned(order, order_id, buyer_id).snapshot()
 
 
 class CancelOrderUseCase:
@@ -81,10 +93,12 @@ class CancelOrderUseCase:
         self._product_repo = product_repo
         self._order_repo = order_repo
 
-    async def execute(self, order_id: str, reason: str) -> dict:
+    async def execute(self, order_id: str, reason: str, buyer_id: str) -> dict:
+        """取消是**不可逆写操作**，归属校验必须在状态机动作之前——
+        被拒绝的取消不得留下任何副作用（库存回补、状态变化都不行）。
+        """
         order = await self._order_repo.find_by_id(order_id)
-        if order is None:
-            raise ValueError(f"订单不存在：{order_id}")
+        _require_owned(order, order_id, buyer_id)
         order.cancel(reason)
         # 取消后回补库存
         for line in order.lines:

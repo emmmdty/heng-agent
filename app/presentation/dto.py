@@ -24,6 +24,9 @@ class SubmitIntentResponse(BaseModel):
 
 
 class CancelOrderRequest(BaseModel):
+    # REST 直调方没有会话上下文，必须显式声明买家身份做归属校验
+    # （红队用例挖出的洞：此前任何人报对订单号就能取消别人的订单）
+    buyer_id: str = Field(min_length=1, description="买家 ID（订单归属校验）")
     reason: str = Field(min_length=1, description="取消原因")
 
 

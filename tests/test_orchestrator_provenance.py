@@ -331,8 +331,9 @@ class TestKnowledgeProvenanceWiring:
         kinds = [json.loads(line).get("type") for line in lines if line.strip()]
         assert "knowledge.unsourced" in kinds
 
-    async def test_warning_lands_in_persisted_trace(self, tmp_path):
-        """告警必须进落盘轨迹——离线审计与 bad case 回收都从这里读。"""
+    async def test_contact_warning_lands_in_persisted_trace(self, tmp_path):
+        """收货字段告警进落盘轨迹。本方法此前与上面的知识库轨迹测试同名，
+        被静默遮蔽从未运行过（F811）——绿色装饰，已于二十三期正名。"""
         from app.infrastructure.persistence.json_file_stores import JsonFileConversationStore
 
         bus = TradeEventBus()
