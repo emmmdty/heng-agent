@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # 也看不出原因——两个问题叠在一起，排查成本远高于缺陷本身。
 from app.infrastructure.settings import load_settings  # noqa: E402,F401
 from app.application.harness.run_identity import describe_run  # noqa: E402
-from app.infrastructure.transient import is_transient_error  # noqa: E402
+from app.infrastructure.transient import describe_error, is_transient_error  # noqa: E402
 
 # 被测服务地址。默认 8000；`EVAL_BASE_URL` 可指到别的端口——
 # 起第二个实例做 --dry-run 体检（或服务本来就不在 8000）时需要它。
@@ -156,6 +156,43 @@ def _landed_price_rules() -> list[str]:
     return lines
 
 
+def resolve_judge_model() -> str:
+    """评审模型解析：EVAL_JUDGE_MODEL > LLM_MODEL > longcat-2.0，唯一表达式。
+
+    配置行写的必须就是将来真判分的那个——rubric 判分（call_judge）、A/B
+    dry-run 账本、A/B 真实判分都从这一个函数取，不许两处各回退各的。
+    """
+    return os.environ.get("EVAL_JUDGE_MODEL") or os.environ.get("LLM_MODEL", "longcat-2.0")
+
+
+async def call_llm_with_retry(client: httpx.AsyncClient, payload: dict) -> str:
+    """LLM 网关直连 + 瞬时错误退避重试，返回原始文本 content。
+
+    rubric 判分（call_judge，JSON 输出）与 A/B 成对判分（纯文本裁决）共用
+    同一条传输与重试逻辑——judge 不经模型层闸门、自己退避重试的纪律只在
+    一处实现，两处各写各的退避，限流行为就会分叉。
+    """
+    last_error: Exception | None = None
+    for attempt in range(_JUDGE_MAX_RETRIES):
+        try:
+            response = await client.post(
+                f"{os.environ['LLM_BASE_URL'].rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {os.environ['LLM_API_KEY']}"},
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except Exception as err:  # noqa: BLE001
+            if not is_transient_error(err) or attempt == _JUDGE_MAX_RETRIES - 1:
+                raise
+            last_error = err
+            delay = _JUDGE_RETRY_BASE_SECONDS * (2**attempt)
+            print(f"   judge 遇限流，{delay:.0f}s 后重试：{err}", flush=True)
+            await asyncio.sleep(delay)
+    raise last_error if last_error else RuntimeError("judge 重试耗尽")
+
+
 async def call_judge(
     client: httpx.AsyncClient,
     transcript: str,
@@ -166,7 +203,7 @@ async def call_judge(
     prior_block = f"## 会话前置事实\n{prior_context}\n\n" if prior_context else ""
     payload = {
         # judge 可独立指定模型：主模型切新版/被限流时，评分基准不跟着飘
-        "model": os.environ.get("EVAL_JUDGE_MODEL") or os.environ.get("LLM_MODEL", "longcat-2.0"),
+        "model": resolve_judge_model(),
         "messages": [
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {
@@ -183,25 +220,8 @@ async def call_judge(
         "temperature": 0,
     }
 
-    last_error: Exception | None = None
-    for attempt in range(_JUDGE_MAX_RETRIES):
-        try:
-            response = await client.post(
-                f"{os.environ['LLM_BASE_URL'].rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {os.environ['LLM_API_KEY']}"},
-                json=payload,
-                timeout=120,
-            )
-            response.raise_for_status()
-            return json.loads(response.json()["choices"][0]["message"]["content"])
-        except Exception as err:  # noqa: BLE001
-            if not is_transient_error(err) or attempt == _JUDGE_MAX_RETRIES - 1:
-                raise
-            last_error = err
-            delay = _JUDGE_RETRY_BASE_SECONDS * (2**attempt)
-            print(f"   judge 遇限流，{delay:.0f}s 后重试：{err}", flush=True)
-            await asyncio.sleep(delay)
-    raise last_error if last_error else RuntimeError("judge 重试耗尽")
+    content = await call_llm_with_retry(client, payload)
+    return json.loads(content)
 
 
 def score_case(judged: dict) -> tuple[float, bool]:
@@ -350,48 +370,101 @@ def guard_fault_support(cases: list[dict], health: dict) -> None:
     )
 
 
-async def apply_faults(client: httpx.AsyncClient, components: list[str]) -> None:
+async def apply_faults(client: httpx.AsyncClient, components: list[str], base_url: str | None = None) -> None:
     """设置当前进程的故障注入；空列表 = 清空。
 
-    失败**必须抛**：吞掉异常继续跑，等于在没有故障的情况下评一条故障用例，
-    结论是假的而且看不出来。
+    base_url 可指到另一臂的实例（A/B 两臂各是一个服务进程，故障必须
+    注入到发流量那一臂）。失败**必须抛**：吞掉异常继续跑，等于在没有
+    故障的情况下评一条故障用例，结论是假的而且看不出来。
     """
+    target = (base_url or BASE_URL).rstrip("/")
     response = await client.post(
-        f"{BASE_URL}/debug/faults", json={"components": components}, timeout=30,
+        f"{target}/debug/faults", json={"components": components}, timeout=30,
     )
     response.raise_for_status()
 
 
-async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> dict:
-    session_id = f"eval-{case['id']}-{uuid.uuid4().hex[:6]}"
-    buyer_id = case.get("buyer_id") or f"eval-buyer-{case['id']}"
+def derive_session_id(case: dict, run_prefix: str = "eval") -> str:
+    return f"{run_prefix}-{case['id']}-{uuid.uuid4().hex[:6]}"
+
+
+def derive_buyer_id(case: dict) -> str:
+    return case.get("buyer_id") or f"eval-buyer-{case['id']}"
+
+
+async def execute_case(
+    client: httpx.AsyncClient,
+    case: dict,
+    base_url: str | None = None,
+    session_id: str | None = None,
+    buyer_id: str | None = None,
+) -> dict:
+    """跑用例的多轮对话（同 case 多轮复用会话），返回 {session_id, transcript}。
+
+    只执行、不判分：rubric judge 在 run_case 里，A/B 成对比较在 ab_run 里——
+    两者共用这条执行路径，会话/买家派生逻辑不许各抄一份。
+
+    故障清理用 try/finally：查询炸了也必须清干净，漏清会让**后面每一条
+    用例**都带着故障跑（原 run_case 只在成功路径清理，是个洞——A/B 一轮
+    几百次执行，中途炸一条的概率不可忽略）。清理自己失败时打日志但不顶掉
+    原始异常：原始异常才是主因。
+    """
+    target = (base_url or BASE_URL).rstrip("/")
+    session_id = session_id or derive_session_id(case)
+    buyer_id = buyer_id or derive_buyer_id(case)
     faults = list(case.get("faults") or [])
-    if faults:
-        # 注入失败就让异常冒到上层，把这条用例判 ERROR——不能在无故障的情况下评它
-        await apply_faults(client, faults)
-    transcript_lines: list[str] = []
-    for query in case["queries"]:
-        response = await client.post(
-            f"{BASE_URL}/commerce/intents",
-            json={
-                "shopping_session_id": session_id,
-                "buyer_id": buyer_id,
-                "locale": "zh-CN",
-                "currency": "CNY",
-                "raw_query": query,
-            },
-            timeout=_INTENT_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        final_text = response.json()["final_text"]
-        transcript_lines.append(f"[买家] {query}\n[Agent] {final_text}")
+    result: dict = {}
+    try:
+        if faults:
+            # 注入失败就让异常冒到上层，把这条用例判 ERROR——不能在无故障的情况下评它
+            await apply_faults(client, faults, base_url=target)
+        transcript_lines: list[str] = []
+        for query in case["queries"]:
+            response = await client.post(
+                f"{target}/commerce/intents",
+                json={
+                    "shopping_session_id": session_id,
+                    "buyer_id": buyer_id,
+                    "locale": "zh-CN",
+                    "currency": "CNY",
+                    "raw_query": query,
+                },
+                timeout=_INTENT_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            final_text = response.json()["final_text"]
+            transcript_lines.append(f"[买家] {query}\n[Agent] {final_text}")
+        result = {
+            "session_id": session_id,
+            "transcript": "\n\n".join(transcript_lines),
+            "fault_clear_error": "",
+        }
+    finally:
+        if faults:
+            # finally 入口先取传播中的原始异常（进了内层 except 就取不到了——
+            # exc_info 会指向清理异常本身）
+            in_flight = sys.exc_info()[1]
+            try:
+                # 无论执行成功与否都要清干净：漏清会让后面每条用例带着故障跑
+                await apply_faults(client, [], base_url=target)
+            except Exception as clear_err:  # noqa: BLE001
+                # 清理失败必须留痕（独立审查抓出的可见性回归）：成功路径写进
+                # 结果字段；执行已炸的路径把清理失败**挂到传播中的原始异常上**，
+                # 由调用方补录——只留 stdout 一行的话，结构化产物里查无实据
+                clear_error = describe_error(clear_err)
+                print(f"   [故障清理失败] {clear_error}", flush=True)
+                if result:
+                    result["fault_clear_error"] = clear_error
+                elif in_flight is not None:
+                    in_flight.fault_clear_error = clear_error
+    return result
 
-    if faults:
-        # 无论判分成功与否都要清干净：漏清会让**后面每一条用例**都带着故障跑，
-        # 而报告里只有这一条写着 faults——那种读数没人能解释
-        await apply_faults(client, [])
 
-    transcript = "\n\n".join(transcript_lines)
+async def run_case(
+    client: httpx.AsyncClient, case: dict, ground_truth: str, base_url: str | None = None,
+) -> dict:
+    executed = await execute_case(client, case, base_url=base_url)
+    transcript = executed["transcript"]
     judged = await call_judge(client, transcript, case["rubric"], ground_truth, case.get("prior_context", ""))
     score, p0_all_pass = score_case(judged)
     return {
@@ -399,10 +472,10 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
         # 报告要记下这一轮落的是哪份流水：金额出处门禁据此把扫描范围收敛到本轮，
         # 否则它扫的是累积目录里的全部历史，读数只会越积越高（见
         # scripts/eval/audit_number_provenance.py 的「扫描范围」）。
-        "session_id": session_id,
+        "session_id": executed["session_id"],
         "description": case["description"],
         # 报告要写明这条是在什么故障下跑的，否则"检索档位不对"会被归因到检索参数
-        "faults": faults,
+        "faults": list(case.get("faults") or []),
         # 判据指纹：**rubric 本身就是配置的一部分**。改了判据再跟旧读数比，
         # 比的是两把不同的尺子——跑测方差工具（scripts/eval/variance.py）
         # 靠它把"同一把尺子量出来的分数"才放在一起算。
@@ -412,6 +485,9 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
         "verdict": "PASS" if p0_all_pass and score >= 0.7 else "FAIL",
         "judged": judged,
         "transcript": transcript,
+        # 故障清理失败要跟着这条用例进报告（后续用例可能带着故障跑），
+        # 空串 = 清理正常——"没发生"与"发生了被吞掉"必须可区分
+        "fault_clear_error": executed.get("fault_clear_error", ""),
     }
 
 
@@ -696,6 +772,8 @@ async def main() -> None:
                     "description": case["description"],
                     "score": 0.0, "p0_pass": False, "verdict": "ERROR",
                     "judged": {}, "transcript": f"执行异常：{type(err).__name__}: {err}",
+                    # 执行炸了且故障清理也炸了：留痕（后续用例可能带着故障跑）
+                    "fault_clear_error": getattr(err, "fault_clear_error", ""),
                 }
             print(f"   -> {result['verdict']}（{result['score']}）", flush=True)
             fresh.append(result)
