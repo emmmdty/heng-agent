@@ -348,3 +348,17 @@ class TestMajorityVerdict:
     def test_empty_raises(self):
         with pytest.raises(ValueError):
             majority_verdict([])
+
+
+class TestMajorityVerdictGuardrails:
+    """plan 级护栏：votes 超界在烧任何配额之前拒绝。"""
+
+    def test_votes_bounds_in_plan(self):
+        from scripts.eval.ab_run import plan_ab_run
+        case = {"id": "c1", "queries": ["q1"]}
+        with pytest.raises(ValueError, match="votes"):
+            plan_ab_run([case], 1, votes=0)
+        with pytest.raises(ValueError, match="votes"):
+            plan_ab_run([case], 1, votes=6)
+        plan = plan_ab_run([case], 1, votes=3)
+        assert plan["judge_calls"] == 6  # 1 对 × 2 序 × 3 票

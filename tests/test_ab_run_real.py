@@ -1011,3 +1011,63 @@ class TestJudgeCallTransport:
         assert captured["max_tokens"] >= 10000
         await ab.make_judge_call(client=None, model="deepseek-v4-flash")("p")
         assert captured["max_tokens"] <= 2500
+
+
+class TestJudgePairRowsConcurrent:
+    """判段并发（授权文档口径：judge 调用可 ~4 并发压缩墙钟）。
+
+    纪律不变：并发只改调度不改读数——行序与 pairs 一致、单飞数有上界、
+    单对失败不拖垮整轮。串行路径（max_concurrency=1）行为逐字不变。
+    """
+
+    @staticmethod
+    def _pairs(n: int) -> list[dict]:
+        return [
+            {
+                "case_id": f"c{i}", "pair_index": 0,
+                "left": {"transcript": "t1"}, "right": {"transcript": "t2"},
+                "case_prompt_text": "问", "prior_context": "",
+            }
+            for i in range(n)
+        ]
+
+    async def test_same_rows_same_order_and_inflight_bounded(self):
+        import asyncio
+
+        state = {"inflight": 0, "max_inflight": 0}
+        lock = asyncio.Lock()
+
+        async def slow_judge(prompt: str) -> str:
+            async with lock:
+                state["inflight"] += 1
+                state["max_inflight"] = max(state["max_inflight"], state["inflight"])
+            await asyncio.sleep(0.02)
+            async with lock:
+                state["inflight"] -= 1
+            return "裁决: 1\n理由: x"
+
+        rows = await judge_pair_rows(
+            self._pairs(6), slow_judge, ground_truth="", votes=2, max_concurrency=3,
+        )
+        assert [r["case_id"] for r in rows] == [f"c{i}" for i in range(6)]
+        assert state["max_inflight"] <= 3
+        assert all(r["verdict_ab"] == "a" and r["verdict_ba"] == "b" for r in rows)
+        assert all(r["votes_ab"] == ["a", "a"] for r in rows)
+
+    async def test_one_pair_failure_does_not_poison_others(self):
+        async def flaky(prompt: str) -> str:
+            if "poison-t1" in prompt:
+                raise RuntimeError("Error code: 503")
+            return "裁决: 2\n理由: x"
+
+        pairs = self._pairs(5)
+        pairs[3]["left"]["transcript"] = "poison-t1"
+        rows = await judge_pair_rows(
+            pairs, flaky, ground_truth="", max_concurrency=3,
+        )
+        assert rows[3]["verdict_ab"] is None and "503" in rows[3]["error_ab"]
+        assert all(r["verdict_ab"] == "b" for i, r in enumerate(rows) if i != 3)
+
+    async def test_invalid_concurrency_raises(self):
+        with pytest.raises(ValueError, match="并发"):
+            await judge_pair_rows(self._pairs(1), None, ground_truth="", max_concurrency=0)
