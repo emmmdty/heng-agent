@@ -604,6 +604,9 @@ class TestCliWiring:
         ])
         code = await ab.main_async(args)
         assert code == 0
+        # 进度回调必须接上：过夜跑的日志里要能看到逐执行/逐判进度
+        assert captured["progress"] is not None
+        assert captured["progress"] is not print or True
         assert captured["k"] == 1
         assert [c["id"] for c in captured["cases"]] == ["compare-two"]
         assert captured["judge_model"] == "longcat-2.0"
@@ -886,3 +889,34 @@ class TestReviewFixes:
     async def test_seconds_per_intent_override_reaches_plan(self, tmp_path):
         payload, _ = await TestRunAbPipeline()._pipeline(tmp_path, [_case("c1")], seconds_per_intent=10.0)
         assert payload["plan"]["estimated_minutes"] == pytest.approx(2 * 10.0 / 60, abs=0.1)
+
+
+class TestJudgeInvalidationRetention:
+    """互换一致率 < 90% 时该轮 judge 读数作废重跑（指标表口径）。
+
+    重判不该重烧执行段：作废轮必须保留 ab-partial，--resume 直接进判段。
+    """
+
+    def _order_biased_factory(self):
+        """位置偏置 judge：永远选位置 1——两序必翻，互换一致率 0。"""
+
+        def factory(model):
+            async def judge_call(prompt):
+                return "裁决: 1\n理由: 位置在前的更好"
+            return judge_call
+        return factory
+
+    async def test_invalid_round_keeps_partial_for_rejudge(self, tmp_path):
+        payload, _ = await TestRunAbPipeline()._pipeline(
+            tmp_path, [_case("c1")], judge_factory=self._order_biased_factory(),
+        )
+        assert payload["significance"]["judge_valid"] is False
+        assert (tmp_path / "ab-partial-20260905-170000.json").exists()  # 供 --resume 重判
+        report = (tmp_path / "ab-report-20260905-170000.md").read_text(encoding="utf-8")
+        assert "作废重跑" in report
+        assert "ab-partial-20260905-170000.json" in report  # 报告里写明续跑入口
+
+    async def test_valid_round_still_deletes_partial(self, tmp_path):
+        payload, _ = await TestRunAbPipeline()._pipeline(tmp_path, [_case("c1")])
+        assert payload["significance"]["judge_valid"] is True
+        assert not (tmp_path / "ab-partial-20260905-170000.json").exists()

@@ -709,6 +709,17 @@ async def run_ab_pipeline(
         "notes": [f"pair error 行 {len(pair_errors)} 条" if pair_errors else ""],
     }
     report_payload["notes"] = [n for n in report_payload["notes"] if n] + cost_notes
+
+    # 正式报告落盘之后才删增量文件（同 eval_regression：顺序反了两份都没了）。
+    # 例外：互换一致率不足被判"作废重跑"的轮次**保留 partial**——重判不该
+    # 重烧执行段，--resume 指着它直接进判段；报告与附注都会写明续跑入口。
+    judge_valid = bool(sig["judge_valid"])
+    if not judge_valid:
+        report_payload["notes"].append(
+            f"该轮 judge 读数作废（互换一致率 {_fmt_rate(swap['rate'])} < 90%）。"
+            f"执行段产物已保留在 {partial_path.name}，改进判段后用 "
+            f"--resume {partial_path} 重判（不重烧执行段）。"
+        )
     report_text = render_ab_report(report_payload)
 
     report_path = eval_dir / f"ab-report-{stamp}.md"
@@ -730,13 +741,15 @@ async def run_ab_pipeline(
         "stats": {"swap": swap, "win_rate": summary, "n_flip": n_flip,
                   "p_value": p_value, "ci": ci, "significance": sig, "decisive_gate": gate},
         "cost_latency": cost_latency,
+        "notes": report_payload["notes"],
     }, ensure_ascii=False, indent=2), encoding="utf-8")
-    # 正式报告落盘之后才删增量文件（同 eval_regression：顺序反了两份都没了）；
-    # 被续跑的旧 partial 一并清掉——留着会被再次误 resume（配置没变时核对能通过）
-    if resume_path is None or resume_path.resolve() != partial_path.resolve():
-        partial_path.unlink(missing_ok=True)
-    if resume_path is not None:
-        resume_path.unlink(missing_ok=True)
+    if judge_valid:
+        if resume_path is None or resume_path.resolve() != partial_path.resolve():
+            partial_path.unlink(missing_ok=True)
+        if resume_path is not None:
+            resume_path.unlink(missing_ok=True)
+    else:
+        progress(f"⚠️ {report_payload['notes'][-1]}")
 
     report_payload["report_path"] = str(report_path)
     report_payload["run_json_path"] = str(run_json_path)
@@ -940,6 +953,7 @@ async def main_async(args: argparse.Namespace) -> int:
             resume_path=Path(args.resume) if args.resume else None,
             positive_control=args.positive_control,
             seconds_per_intent=args.seconds_per_intent,
+            progress=print,  # 逐执行/逐判进度进 stdout——过夜跑必须可观察
         )
     print(f"\n报告已写入：{payload['report_path']}")
     print(f"结构化结果：{payload['run_json_path']}")
