@@ -520,6 +520,13 @@ def make_judge_call(client: httpx.AsyncClient | None, model: str):
     """
     from scripts.eval_regression import call_llm_with_retry
 
+    # 按模型分预算（传输配置，不是判据放宽）：
+    # - longcat-2.0 推理模型，reasoning 与 content 分离，预算内出不来 content
+    #   就是 KeyError（M2'-c 实测 8/32）——自然 reasoning ~3787，给 12000；
+    # - deepseek-v4-flash CoT-in-content，预算越大长跑越长（M2'-d 探针实测
+    #   大 prompt + 12000 被网关 225s 杀连接）——沿用双 judge 轮校准的 2000。
+    max_tokens = 2000 if model.startswith("deepseek") else 12000
+
     async def judge_call(prompt: str) -> str:
         return await call_llm_with_retry(client, {
             "model": model,
@@ -527,11 +534,8 @@ def make_judge_call(client: httpx.AsyncClient | None, model: str):
             "temperature": 0,
             # CoT 判词（先逐条评估再裁决）在网关默认输出预算下会被截断，
             # 截断的输出没有裁决行=脏输出（双 judge 轮 7/24 解析失败实测）——
-            # 给足预算是传输配置，不是判据放宽。2000 是按 content 长度定的；
-            # 先导v2 实测 longcat-2.0 是推理模型，仅 reasoning 就烧 ~3800
-            # （M2'-b 六条判据提示词更重），预算内出不来 content → 计费按
-            # 实际用量，上限调高不产生额外成本。
-            "max_tokens": 12000,
+            # 给足预算是传输配置，不是判据放宽
+            "max_tokens": max_tokens,
         })
 
     return judge_call

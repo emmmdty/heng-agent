@@ -992,3 +992,22 @@ class TestJudgeCallTransport:
         assert captured["temperature"] == 0
         assert captured["max_tokens"] >= 1500
         assert captured["messages"][0]["content"] == "提示词"
+
+    async def test_max_tokens_scales_with_model_reasoning_behavior(self, monkeypatch):
+        """按模型分预算：longcat-2.0 是推理模型（reasoning 与 content 分离，
+        自然 reasoning 实测 ~3787，M2'-c 8/32 KeyError 根因）→ 12000；
+        deepseek-v4-flash 是 CoT-in-content（预算越大长跑越长，M2'-d 探针实测
+        大 prompt+12000 被网关 225s 杀连接）→ 沿用其历史校准 2000。"""
+        import scripts.eval.ab_run as ab
+
+        captured = {}
+
+        async def fake_retry(client, payload):
+            captured.update(payload)
+            return "裁决: 1\n理由: ok"
+
+        monkeypatch.setattr("scripts.eval_regression.call_llm_with_retry", fake_retry)
+        await ab.make_judge_call(client=None, model="longcat-2.0")("p")
+        assert captured["max_tokens"] >= 10000
+        await ab.make_judge_call(client=None, model="deepseek-v4-flash")("p")
+        assert captured["max_tokens"] <= 2500
