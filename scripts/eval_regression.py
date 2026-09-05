@@ -417,7 +417,7 @@ async def run_case(client: httpx.AsyncClient, case: dict, ground_truth: str) -> 
 
 def render_report(results: list[dict], run_line: str = "") -> str:
     lines = [
-        f"# Globex 评测回归报告（{datetime.now().strftime('%Y-%m-%d %H:%M')}）",
+        f"# 「衡 · Heng」评测回归报告（{datetime.now().strftime('%Y-%m-%d %H:%M')}）",
         "",
         # 配置行紧跟标题：分数变了要能先排除"是不是换配置了"，再去改 Agent
         f"跑测配置：{run_line}" if run_line else "跑测配置：未知（服务未报）",

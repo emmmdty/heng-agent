@@ -252,7 +252,7 @@ class SqlOrderRepository(OrderRepository):
         """按已有订单数递增。生产应改用独立序列或雪花 ID，避免并发撞号。"""
         async with self._session_factory() as db:
             count = await db.scalar(select(func.count()).select_from(OrderRow))
-        return f"GBX-{(count or 0) + 1:06d}"
+        return f"HNG-{(count or 0) + 1:06d}"
 
 
 class SqlPreferenceStore(PreferenceStore):

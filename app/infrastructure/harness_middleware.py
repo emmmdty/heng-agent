@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """HarnessToolMiddleware
 
-工具边界上的护栏中间件（17-2 章的 Hook Pipeline 落地）。
+工具边界上的护栏中间件（能力清单第 1 项 Hook Pipeline 的落地）。
 
-**为什么不自造 hook registry**：文档 17-2 描述了一个 `@harness_hook` 装饰器 +
+**为什么不自造 hook registry**：基线参考设计里描述了一个 `@harness_hook` 装饰器 +
 `HookPipeline.register/run` 的自建管道。但 AgentScope 2.0 的 `ToolMiddlewareBase`
 本身就是洋葱式拦截器，`on_tool_call` 内 `next_handler` 之前/之后天然对应
 `pre_tool_call` / `post_tool_call` 两个点位，且已被 `ToolResilienceMiddleware` 采用。

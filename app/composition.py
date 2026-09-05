@@ -87,7 +87,7 @@ def _prompt_fingerprint() -> str:
     prompt 一改，旧缓存的回复就不再代表当前 Agent 行为，必须作废。
     读不到文件时返回固定值，不因此阻断启动。
     """
-    path = Path(__file__).resolve().parent / "application" / "prompts" / "globex.yml"
+    path = Path(__file__).resolve().parent / "application" / "prompts" / "heng.yml"
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
     except OSError:

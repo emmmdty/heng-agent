@@ -20,8 +20,8 @@ interface Turn {
 }
 
 export default function App() {
-  const [sessionId] = useState(() => loadOrCreate("globex.session", "web"));
-  const [buyerId] = useState(() => loadOrCreate("globex.buyer", "buyer"));
+  const [sessionId] = useState(() => loadOrCreate("heng.session", "web"));
+  const [buyerId] = useState(() => loadOrCreate("heng.buyer", "buyer"));
   const [events, setEvents] = useState<TradeEvent[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [streaming, setStreaming] = useState("");
@@ -104,7 +104,7 @@ export default function App() {
   return (
     <div className="layout">
       <header>
-        <h1>Globex 跨境购物助手</h1>
+        <h1>「衡 · Heng」跨境购物助手</h1>
         <div className="meta">
           <span>会话 {sessionId}</span>
           <span>买家 {buyerId}</span>
@@ -117,13 +117,13 @@ export default function App() {
           <div className="turns">
             {turns.map((turn, index) => (
               <div key={index} className={`turn ${turn.role}`}>
-                <div className="who">{turn.role === "buyer" ? "我" : "Globex"}</div>
+                <div className="who">{turn.role === "buyer" ? "我" : "衡 · Heng"}</div>
                 <div className="text">{turn.text}</div>
               </div>
             ))}
             {streaming && (
               <div className="turn agent streaming">
-                <div className="who">Globex</div>
+                <div className="who">衡 · Heng</div>
                 <div className="text">{streaming}</div>
               </div>
             )}

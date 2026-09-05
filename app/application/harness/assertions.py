@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""assertions —— 三类单步断言（17-3 章）
+"""assertions —— 三类单步断言（能力清单第 2 项）
 
     Schema      工具返回是否是结构完整的合法 JSON        <1ms  纯校验
     Sequencing  工具调用顺序是否满足前置条件            <1ms  规则判断

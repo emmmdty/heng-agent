@@ -117,7 +117,7 @@ class FakeRedisClient:
         self.acked.append((stream, message_id))
 
     async def xinfo_groups(self, stream):
-        return [{"name": "globex-workers", "lag": 2}]
+        return [{"name": "heng-workers", "lag": 2}]
 
 
 def _task(priority: int) -> IntentTask:

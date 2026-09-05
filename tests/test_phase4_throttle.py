@@ -71,7 +71,7 @@ class TestTransientJudgement:
             # 裸数字子串匹配的假阳性：业务文案里出现 502 不该被当成网关故障。
             # 判据因此要求 "error code:" 前缀，而不是直接找 "502"。
             "库存不足 502 件",
-            "订单 GBX-000429 已取消",
+            "订单 HNG-000429 已取消",
         ],
     )
     async def test_business_failures_are_not_transient(self, message):

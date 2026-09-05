@@ -2,7 +2,7 @@
 """InMemoryProductRepository / InMemoryOrderRepository
 
 开发态内存仓储实现。ProductRepository 由种子数据初始化；
-OrderRepository 提供自增单号（GBX-XXXX 前缀，便于日志排查）。
+OrderRepository 提供自增单号（HNG-XXXX 前缀，便于日志排查）。
 """
 from __future__ import annotations
 
@@ -43,4 +43,4 @@ class InMemoryOrderRepository(OrderRepository):
         return self._orders.get(order_id)
 
     async def next_order_id(self) -> str:
-        return f"GBX-{next(self._counter):06d}"
+        return f"HNG-{next(self._counter):06d}"

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""shared_breaker —— 熔断状态跨实例共享（16-5 章）
+"""shared_breaker —— 熔断状态跨实例共享（能力清单第 7 项）
 
 问题：`CircuitBreakerRegistry` 是进程内的。水平扩容成多个 API / worker 副本后，
 每个进程各统计一份失败视图——A 副本已熔断某工具，B 副本还在继续打它，
@@ -24,7 +24,7 @@ from app.infrastructure.resilience import CircuitBreakerRegistry
 
 logger = logging.getLogger(__name__)
 
-_KEY_PREFIX = "globex:breaker:"
+_KEY_PREFIX = "heng:breaker:"
 # 状态 TTL 需明显大于冷却期，避免冷却还没到就被 Redis 过期清掉
 _TTL_MULTIPLIER = 10
 

@@ -43,7 +43,7 @@ _UNSAFE_PATTERNS = (
     r"下单", r"买了", r"购买", r"付款", r"支付",
     r"取消", r"退单", r"退款", r"改地址",
     r"刚才", r"刚刚", r"上面", r"前面", r"那个", r"这个", r"它",
-    r"我的订单", r"订单号", r"GBX-",
+    r"我的订单", r"订单号", r"HNG-",
 )
 _UNSAFE_RE = re.compile("|".join(_UNSAFE_PATTERNS))
 

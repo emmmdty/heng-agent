@@ -91,7 +91,7 @@ class TestOwnershipAtUseCaseLayer:
         _, order_repo = repos
         usecase = QueryOrderUseCase(order_repo)
         with pytest.raises(ValueError) as err:
-            await usecase.execute("GBX-NOTEXIST", "buyer-b")
+            await usecase.execute("HNG-NOTEXIST", "buyer-b")
         assert "订单不存在" in str(err.value)
 
 

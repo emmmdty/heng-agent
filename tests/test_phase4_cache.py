@@ -128,7 +128,7 @@ class TestSemanticCacheSafety:
             "帮我下单这款露营灯",
             "取消我的订单",
             "刚才那款多少钱",
-            "订单号 GBX-000001 查一下",
+            "订单号 HNG-000001 查一下",
             "这个能寄美国吗",
         ],
     )
@@ -145,7 +145,7 @@ class TestSemanticCacheSafety:
     async def test_order_intent_never_written_to_cache(self):
         cache = InMemoryCache()
         sem = SemanticCache(cache, CountingEmbedder(), threshold=0.9)
-        await sem.remember("b1", "帮我下单这款露营灯", "已为你创建订单 GBX-000001", has_history=False)
+        await sem.remember("b1", "帮我下单这款露营灯", "已为你创建订单 HNG-000001", has_history=False)
         assert await sem.lookup("b1", "帮我下单这款露营灯", has_history=False) is None
 
 

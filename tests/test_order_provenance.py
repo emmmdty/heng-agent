@@ -150,17 +150,17 @@ class TestDuplicateOrderWarning:
         tracker.record_result("s1", _search_result("P1008"))
         items = _items(("P1008", "P1008-S1"))
         assert not tracker.check("s1", items).warnings
-        tracker.record_order("s1", items, "GBX-000001")
+        tracker.record_order("s1", items, "HNG-000001")
 
         outcome = tracker.check("s1", items)
         assert not outcome.rejected
-        assert any("GBX-000001" in w for w in outcome.warnings)
+        assert any("HNG-000001" in w for w in outcome.warnings)
 
     def test_different_quantity_is_not_a_duplicate(self):
         """数量不同说明买家在追加，不是重复提交——按精确匹配判，宁可漏报。"""
         tracker = OrderProvenanceTracker()
         tracker.record_result("s1", _search_result("P1008"))
-        tracker.record_order("s1", _items(("P1008", "P1008-S1")), "GBX-000001")
+        tracker.record_order("s1", _items(("P1008", "P1008-S1")), "HNG-000001")
 
         outcome = tracker.check(
             "s1", [{"product_id": "P1008", "sku_id": "P1008-S1", "quantity": 2}],
@@ -172,18 +172,18 @@ class TestDuplicateOrderWarning:
         tracker = OrderProvenanceTracker()
         tracker.record_result("s1", _search_result("P1008", "P1002"))
         tracker.record_order(
-            "s1", _items(("P1008", "P1008-S1"), ("P1002", "P1002-S1")), "GBX-000001",
+            "s1", _items(("P1008", "P1008-S1"), ("P1002", "P1002-S1")), "HNG-000001",
         )
         outcome = tracker.check(
             "s1", _items(("P1002", "P1002-S1"), ("P1008", "P1008-S1")),
         )
-        assert any("GBX-000001" in w for w in outcome.warnings)
+        assert any("HNG-000001" in w for w in outcome.warnings)
 
     def test_duplicate_across_sessions_is_not_flagged(self):
         tracker = OrderProvenanceTracker()
         tracker.record_result("s1", _search_result("P1008"))
         tracker.record_result("s2", _search_result("P1008"))
-        tracker.record_order("s1", _items(("P1008", "P1008-S1")), "GBX-000001")
+        tracker.record_order("s1", _items(("P1008", "P1008-S1")), "HNG-000001")
         assert not tracker.check("s2", _items(("P1008", "P1008-S1"))).warnings
 
 

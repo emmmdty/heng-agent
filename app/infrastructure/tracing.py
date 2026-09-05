@@ -38,7 +38,7 @@ def setup_tracing(settings: Settings) -> None:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    provider = TracerProvider(resource=Resource.create({"service.name": "globex-agent"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": "heng-agent"}))
     provider.add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{settings.otlp_endpoint.rstrip('/')}/v1/traces")),
     )

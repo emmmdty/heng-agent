@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Product 聚合根
 
-Globex 把跨境商品建模为 Product（SPU）+ Sku（多个），携带品牌、产地、亮点等结构化属性。
+「衡 · Heng」把跨境商品建模为 Product（SPU）+ Sku（多个），携带品牌、产地、亮点等结构化属性。
 SearchAgent 召回的"候选集"传递的就是 Product 卡片，TradeAgent 创建订单时再以 Sku 粒度结算。
 """
 from __future__ import annotations

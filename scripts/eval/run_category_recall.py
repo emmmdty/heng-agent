@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""品类知识库（CategoryInsight）召回评测 —— 见教程 13-1 §5。
+"""品类知识库（CategoryInsight）召回评测 —— 见能力清单 13-1 §5。
 
 与商品检索评测共用 `scripts/eval/metrics.py` 的三个指标，区别只在**标注单位**：
 

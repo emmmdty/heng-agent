@@ -109,7 +109,7 @@ class ThrottledChatModel(OpenAIChatModel):
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
         """真正打上游的一跳。抽成方法便于替换与测试。
 
-        同时是四档预算降级（16-4 章）的作用点：
+        同时是四档预算降级（能力清单第 5 项）的作用点：
         预算充足（main）走主模型；剩余不足时切到更便宜的备用模型，
         并发 model.fallback 事件如实告知——**降级不静默**。
         minimal 档额外注入简洁模式提示，压住 Think 长度。

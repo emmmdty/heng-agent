@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""loop_detector —— 循环不收敛检测（14 章第四道护栏的补充）
+"""loop_detector —— 循环不收敛检测（能力清单第 4 项 LoopDetector 的补充）
 
 `ReActConfig(max_iters)` 只保证「不会无限跑」，但它是硬上限：模型在两个工具间
 反复横跳时，token 会一路烧到上限才停。本模块在**远早于上限**的位置发现打转，

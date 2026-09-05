@@ -57,7 +57,7 @@ class FakeStreamClient:
         batch = available[:count]
         for mid, _fields in batch:
             self.pending[mid] = 1
-        return [("globex:intents", batch)] if batch else []
+        return [("heng:intents", batch)] if batch else []
 
     async def xack(self, _stream, _group, message_id):
         self.acked.append(message_id)
@@ -68,7 +68,7 @@ class FakeStreamClient:
         return [{"times_delivered": times}]
 
     async def xinfo_groups(self, _stream):
-        return [{"name": "globex-workers", "lag": len(self.entries) - len(self.acked)}]
+        return [{"name": "heng-workers", "lag": len(self.entries) - len(self.acked)}]
 
     async def set(self, key, value, ex=None, nx=False):
         if nx and key in self.kv:
@@ -152,7 +152,7 @@ class TestConsumeSemantics:
         client = FakeStreamClient()
         queue = RedisStreamTaskQueue(client)
         message_id = await client.xadd(
-            "globex:intents", {"payload": json.dumps(_task().to_dict())},
+            "heng:intents", {"payload": json.dumps(_task().to_dict())},
         )
         client.pending[message_id] = 3  # 已投递 3 次
 
@@ -206,7 +206,7 @@ class TestEventBackplane:
 
         assert client.published, "接了背板后事件必须广播出去，否则 worker 的事件到不了 API 进程"
         channel, data = client.published[0]
-        assert channel == "globex:events:s1"
+        assert channel == "heng:events:s1"
         envelope = json.loads(data)
         assert envelope["event"]["type"] == "tool.invoke"
         assert envelope["origin"], "必须带发送方标识，否则无法过滤自己发的消息"

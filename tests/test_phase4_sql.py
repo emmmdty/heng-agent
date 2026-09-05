@@ -40,7 +40,7 @@ async def engine():
     await eng.dispose()
 
 
-def _order(order_id: str = "GBX-000001") -> Order:
+def _order(order_id: str = "HNG-000001") -> Order:
     return Order.place(
         order_id=order_id,
         buyer_id="buyer-001",
@@ -86,7 +86,7 @@ class TestEngineSelection:
 
         settings = load_settings()
         assert settings.database_url.startswith("sqlite+aiosqlite:///")
-        assert settings.database_url.endswith("globex.db")
+        assert settings.database_url.endswith("heng.db")
 
     async def test_explicit_database_url_wins(self, tmp_path, monkeypatch):
         from app.infrastructure.settings import load_settings
@@ -169,7 +169,7 @@ class TestOrderRepository:
     async def test_order_roundtrip_preserves_money_and_status(self, engine):
         repo = SqlOrderRepository(engine)
         await repo.save(_order())
-        restored = await repo.find_by_id("GBX-000001")
+        restored = await repo.find_by_id("HNG-000001")
         assert restored is not None
         assert restored.status is OrderStatus.CONFIRMED
         # 金额按最小单位存取，不能有浮点漂移
@@ -184,20 +184,20 @@ class TestOrderRepository:
         await repo.save(order)
         order.cancel("买家改主意了")
         await repo.save(order)
-        restored = await repo.find_by_id("GBX-000001")
+        restored = await repo.find_by_id("HNG-000001")
         assert restored.status is OrderStatus.CANCELLED
         assert restored.cancel_reason == "买家改主意了"
         # 订单行整体重写，不能出现重复行
         assert len(restored.lines) == 1
 
     async def test_missing_order_returns_none(self, engine):
-        assert await SqlOrderRepository(engine).find_by_id("GBX-999999") is None
+        assert await SqlOrderRepository(engine).find_by_id("HNG-999999") is None
 
     async def test_next_order_id_increments(self, engine):
         repo = SqlOrderRepository(engine)
-        assert await repo.next_order_id() == "GBX-000001"
-        await repo.save(_order("GBX-000001"))
-        assert await repo.next_order_id() == "GBX-000002"
+        assert await repo.next_order_id() == "HNG-000001"
+        await repo.save(_order("HNG-000001"))
+        assert await repo.next_order_id() == "HNG-000002"
 
 
 class TestPreferenceStore:

@@ -118,7 +118,7 @@ class TestToolsDirectInvoke:
             )
             snapshot = json.loads(ok.content[0].text)
             assert snapshot["status"] == "CONFIRMED"
-            assert snapshot["order_id"].startswith("GBX-")
+            assert snapshot["order_id"].startswith("HNG-")
             assert snapshot["buyer_id"] == "b1"
 
             bad = await tool(

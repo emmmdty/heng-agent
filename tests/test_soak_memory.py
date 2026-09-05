@@ -97,7 +97,7 @@ class TestProjectRoot:
         首跑 300 会话的读数就栽在落盘路径指到仓库外，数据全丢。"""
         from scripts import soak_memory
 
-        assert soak_memory.PROJECT_ROOT.name == "globex-agent"
+        assert soak_memory.PROJECT_ROOT.name == "heng-agent"
         assert soak_memory.EVAL_DIR == soak_memory.PROJECT_ROOT / "eval"
 
 

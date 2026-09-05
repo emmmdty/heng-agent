@@ -110,4 +110,4 @@ class TestOrderLifecycle:
     async def test_query_unknown_order(self, order_repo):
         query = QueryOrderUseCase(order_repo)
         with pytest.raises(ValueError, match="订单不存在"):
-            await query.execute("GBX-999999", "buyer-1")
+            await query.execute("HNG-999999", "buyer-1")

@@ -20,7 +20,7 @@ from app.infrastructure.settings import Settings
 
 
 def _point_id(product_id: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"globex/product/{product_id}"))
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"heng/product/{product_id}"))
 
 
 class QdrantProductIndex(ProductVectorIndex):

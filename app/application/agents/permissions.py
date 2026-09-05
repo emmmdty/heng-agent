@@ -2,7 +2,7 @@
 """permissions
 
 2.0 权限系统适配：DEFAULT 模式下非只读工具会触发 RequireUserConfirmEvent 挂起等确认。
-Globex 的确认语义在对话层（MainAgent 先出"确认卡"、买家确认后才执行写操作），
+「衡 · Heng」的确认语义在对话层（MainAgent 先出"确认卡"、买家确认后才执行写操作），
 工具层无需二次确认，因此对业务写工具与内置 Task 计划工具显式配置 allow 规则。
 
 不用 BYPASS/DONT_ASK 全局模式：保持权限引擎生效，只精准放行已知工具，

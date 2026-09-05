@@ -113,7 +113,7 @@ class TestWritePathThroughRealMiddleware:
             shipping_address=ADDRESS,
         )
         payload = json.loads(text)
-        assert payload["order_id"].startswith("GBX-")
+        assert payload["order_id"].startswith("HNG-")
         assert payload["status"] == "CONFIRMED"
 
     async def test_order_without_search_is_rejected(self, tools):
@@ -151,7 +151,7 @@ class TestWritePathThroughRealMiddleware:
             tools["create_order_tool"], items=items, shipping_address=ADDRESS,
         )
         assert first["order_id"] in second, "第二单要带上已有订单号让模型去跟买家确认"
-        assert "GBX-" in second
+        assert "HNG-" in second
 
     async def test_quote_and_optimize_results_also_count_as_provenance(self, tools):
         """出处不止来自检索：组合报价与组合优化返回的商品同样算。
@@ -244,7 +244,7 @@ class TestConfirmationMustCrossOneBuyerTurn:
             shipping_address=ADDRESS,
         )
         assert text.startswith("[error]") and "确认" in text
-        assert await order_repo.find_by_id("GBX-000001") is None, (
+        assert await order_repo.find_by_id("HNG-000001") is None, (
             "硬拒必须发生在工具体之前——库存与订单都不能被动过"
         )
 
@@ -252,5 +252,5 @@ class TestConfirmationMustCrossOneBuyerTurn:
         """取消订单不受这条判据管：它是对既有订单的纠正动作，
         买家说"取消"就是明确指令，再要一次确认只会拖慢纠错。"""
         tools, _ = first_turn_tools
-        text = await _call(tools["cancel_order_tool"], order_id="GBX-999999", reason="改主意")
+        text = await _call(tools["cancel_order_tool"], order_id="HNG-999999", reason="改主意")
         assert "确认" not in text, "取消不该被确认判据拦下（这里应当是'订单不存在'）"

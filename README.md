@@ -1,14 +1,18 @@
-# Globex - 跨境电商 Agent（AgentScope 2.0）
+# 「衡 · Heng」- 跨境电商 Agent（AgentScope 2.0）
 
-> **三分钟版**：这是一个基于 AgentScope 2.0 的跨境电商购物 Agent（检索 / 比价 / 组合 / 下单 / 记忆），
-> 外加一套自建的**可信度工程**：8 类行为判据从 LLM judge 迁移为确定性判据、八项 15 秒零模型成本门禁、
-> 每道护栏"真红一次 + 零误报"的证据链。四个数字：端到端 44 条合成用例结算全 PASS（排除环境 ERROR 均分 0.992）；
-> 无出处金额率 2.9%（历史最好轮，暴露面拆分后可见其中纯编造仅 1 处）；
+> **三分钟版**：「衡 · Heng」是一个基于 AgentScope 2.0 的跨境电商购物 Agent（检索 / 比价 / 组合 / 下单 / 记忆），
+> 继承自原项目 globex-agent 并在其上进行了改造，在此之上自建了一套**可信度工程**：
+> 8 类行为判据从 LLM judge 迁移为确定性判据、八项 15 秒零模型成本门禁、
+> 每道护栏"真红一次 + 零误报"的证据链。
+> 四个关键数字：
+> ① **955 单测全绿**（约 12s）；② **评测用例 55 条（主线 44 + 红队 11）**，端到端 44 条正常态结算全 PASS（排除环境 ERROR 均分 0.993）；
+> ③ **判据/门禁**：8 类确定性判据 + 八项零 LLM 成本门禁（约 15s）；④ **真红档案**：金额出处 / 算式自洽 / 收货字段三道门禁均"真红一次 + 零误报"留档（收货护栏在红队轮首次真红），组合总价与知识库出处两道如实标注"待首次真红"。
+> 其他核心读数：无出处金额率 2.9%（历史最好轮，暴露面拆分后可见其中纯编造仅 1 处）；
 > 商品召回 Recall@8 0.967（105 条标注，hybrid_rerank）；judge 判词波动带 0.175（20 条重判，翻转 0 条）。
 > **边界声明**：自建评测、无真实流量、单人标注——定位为可信度工程的方法验证，不是生产系统；
 > 每个数字的复现命令见 [docs/贡献证明.md](docs/贡献证明.md)，适用边界见同文第三节。
 
-基于 AgentScope 2.0 的跨境电商超级搜索框 Agent 系统，DDD 洋葱架构落地：
+「衡 · Heng」是基于 AgentScope 2.0 的跨境电商超级搜索框 Agent 系统，DDD 洋葱架构落地：
 
 - **MainAgent**（CommerceConcierge）：超级框总调度，**持有全部业务工具可直接单干**；
   内置 Task 计划四件套管理任务清单；满足"可并行 / 上下文隔离 / 链深"任一条件时经 `task_dispatch` 派发子 Agent；
@@ -41,7 +45,7 @@ app/
 │   ├── usecases/      # CatalogSearch（门控混合召回+到手价内联）、PlaceOrder/QueryOrder/CancelOrder
 │   ├── tools/         # product_search、订单三工具、web_search、remember_preference、task_dispatch
 │   ├── agents/        # MainAgent / SearchAgent / TradeAgent 工厂 + Orchestrator + SessionRegistry
-│   └── prompts/       # globex.yml：主 / 子 Agent 系统提示词
+│   └── prompts/       # heng.yml：主 / 子 Agent 系统提示词
 ├── infrastructure/    # llm/embedding/qdrant/reranker/retrieval(BM25)/tracing、rag 知识库、缓存、队列、韧性与闸门、仓储
 ├── presentation/      # FastAPI 路由、WebSocket ConnectionManager、DTO
 ├── composition.py     # 装配容器（API 与 worker 共用一份接线）
@@ -49,7 +53,7 @@ app/
 knowledge/             # 品类洞察知识文档（Markdown，服务启动时幂等入库）
 frontend/              # React + Vite 前端：对话流 + 商品卡 + 事件时间线
 eval/                  # Rubric 用例集 cases.yaml + 召回标注集（105 商品 / 22 品类）+ 回归报告
-docs/                  # 设计演进记录（分期取舍与踩坑档案）
+docs/                  # 设计演进记录（分期取舍与踩坑档案）+ 能力对齐清单 + 贡献证明
 docker/                # docker-compose.yaml（app + worker + qdrant + redis + frontend）
 ```
 
@@ -153,7 +157,7 @@ docker/                # docker-compose.yaml（app + worker + qdrant + redis + f
   Agent 照做并回"无需确认"——提示词第 1 条写得清清楚楚，但**只写在提示词里的
   约束敌不过模型眼前正在读的那句话**，而这次的后果是未经确认就扣了库存。
   判据取"第几轮"这个系统自己知道的事实，不去猜"回复里有没有确认卡"
-  （启发式判定正是 17-4 四阶段状态机被否掉的理由）。
+  （启发式判定正是「四阶段对话状态机」这条能力基线项被否掉的理由）。
 - **写路径的出处校验**：下单的每一个商品都必须在本会话的工具返回里出现过——
   `product_id` 无出处即硬拒（`sku_id` 只警告，因为 `filtered_out` 与组合报价
   本来就不带 sku_id）。这是金额出处校验在写路径上的同一条缝，而后果更重：
@@ -162,6 +166,9 @@ docker/                # docker-compose.yaml（app + worker + qdrant + redis + f
   配套修掉一个零告警的接线缺口：Harness 中间件此前只挂在主 Agent 自己的工具上，
   检索/计价/订单工具从没进过它——顺序硬拒、schema 断言、L3 注入过滤
   在真正需要它们的地方一次都没跑过（`tests/test_harness_wiring.py` 钉住了这件事）。
+- **订单归属校验**：查询与取消订单必须校验买家归属——任何买家报对订单号
+  即可查/取消他人订单是红队用例挖出的真洞，已在 UseCase 层修复
+  （非本人订单与不存在订单对外同读数，取消零副作用拒绝）。
 - **降级链可被端到端检验**：`FAULT_INJECTION_ENABLED=1` 时三个检索端口
   （embedding / vector_index / reranker）被包上装饰器，`POST /debug/faults` 运行时
   选择注入哪些，`eval/cases.yaml` 的用例可声明 `faults: [reranker]`。
@@ -224,7 +231,7 @@ CI 跑的是 `check-ci`（`.github/workflows/check.yml`）。金额出处一项*
 单项与带成本的验证：
 
 ```bash
-uv run pytest                          # 848 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 轨迹保真 / 跑测身份
+uv run pytest                          # 955 个单测：domain / 召回降级与过滤回传 / 计价规则 / 组合优化 / 记忆持久化 / 压缩策略 / 韧性中间件 / 金额出处校验 / 订单归属校验 / 轨迹保真 / 跑测身份
 uv run python scripts/smoke_e2e.py    # 端到端冒烟：WS 订阅 + 提交意图，实时打印事件流
 uv run python scripts/verify_parallel.py   # 并行验证：同轮多派 vs 串行的墙钟耗时与事件重叠数对比
 make eval-smoke                            # 评测回归日常档：12 条 case（--tag smoke）
@@ -248,7 +255,7 @@ uv run python scripts/verify_fallback.py              # 模型回退链真实验
 
 用例分 `smoke` / `full` 两档（`tags` 字段，`--tag` 选择）：全量一轮 60-90 分钟，
 没有日常档的结果不是"跑得更全"，是"日常根本不跑"。所有用例都隐含属于 `full`，
-漏标 tag 不会导致某条用例静默不被跑到。
+漏标 tag 不会导致某条用例静默不被跑到。另有 `--tag redteam` 红队定向档（11 条对抗性用例）。
 
 **报告开头自带一行跑测配置**（被测模型 / 评审模型 / 提示词版本 / 精排与门限 / 语义缓存 / 代码新鲜度 / **检索依赖的实测可达性**），
 由被测服务 `GET /health` 自报、脚本原样抄录。分数变了先看这一行，再去改 Agent。

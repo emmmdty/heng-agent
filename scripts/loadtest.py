@@ -1,7 +1,7 @@
 # scripts/loadtest.py
 # 依赖：httpx（uv add --group dev httpx）
 # 运行：uv run python scripts/loadtest.py --base-url http://localhost:8000 --stages 5,10,20,40
-"""Globex 同步意图接口阶梯压测。
+"""「衡 · Heng」同步意图接口阶梯压测。
 
 与 scripts/verify_parallel.py 的分工：verify_parallel 验「单条意图内部有没有真并行」，
 本脚本验「多条意图并发时系统扛不扛得住、端到端多快、什么时候开始排队」。

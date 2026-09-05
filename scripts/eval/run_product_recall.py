@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""商品检索（product_search）召回评测 —— 见教程 13-2 章。
+"""商品检索（product_search）召回评测 —— 见能力清单 13-2 项。
 
 直连 `CatalogSearchUseCase`，不过 HTTP、不过 Agent：召回评测的定位是模块级
 「日常体检」，改一行权重、换一版 reranker 都该能几秒钟跑一遍，才可能常驻 CI。

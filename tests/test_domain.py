@@ -56,35 +56,35 @@ class TestMoney:
 
 class TestOrderStateMachine:
     def test_place_enters_confirmed(self):
-        order = Order.place("GBX-000001", "buyer-1", _address(), [_line()])
+        order = Order.place("HNG-000001", "buyer-1", _address(), [_line()])
         assert order.status is OrderStatus.CONFIRMED
         assert order.confirmed_at is not None
 
     def test_total_amount(self):
-        order = Order.place("GBX-000001", "buyer-1", _address(), [_line(quantity=2)])
+        order = Order.place("HNG-000001", "buyer-1", _address(), [_line(quantity=2)])
         assert order.total_amount().to_major_units() == 378.0
 
     def test_cancel_confirmed_order(self):
-        order = Order.place("GBX-000001", "buyer-1", _address(), [_line()])
+        order = Order.place("HNG-000001", "buyer-1", _address(), [_line()])
         order.cancel("买家改主意了")
         assert order.status is OrderStatus.CANCELLED
         assert order.cancel_reason == "买家改主意了"
 
     def test_cancel_requires_reason(self):
-        order = Order.place("GBX-000001", "buyer-1", _address(), [_line()])
+        order = Order.place("HNG-000001", "buyer-1", _address(), [_line()])
         with pytest.raises(ValueError, match="reason"):
             order.cancel("  ")
 
     def test_cancel_twice_rejected(self):
-        order = Order.place("GBX-000001", "buyer-1", _address(), [_line()])
+        order = Order.place("HNG-000001", "buyer-1", _address(), [_line()])
         order.cancel("买家改主意了")
         with pytest.raises(ValueError, match="仅 CONFIRMED"):
             order.cancel("再取消一次")
 
     def test_reject_mixed_currency_lines(self):
         with pytest.raises(ValueError, match="币种不一致"):
-            Order.place("GBX-000001", "buyer-1", _address(), [_line("CNY"), _line("USD")])
+            Order.place("HNG-000001", "buyer-1", _address(), [_line("CNY"), _line("USD")])
 
     def test_reject_empty_lines(self):
         with pytest.raises(ValueError, match="订单行"):
-            Order.place("GBX-000001", "buyer-1", _address(), [])
+            Order.place("HNG-000001", "buyer-1", _address(), [])
