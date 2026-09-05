@@ -171,6 +171,21 @@ def map_winner(winner: str, order: tuple[str, str]) -> str:
     raise ValueError(f"非法 winner：{winner!r}（应为 '1'/'2'/'tie'）")
 
 
+def majority_verdict(winners: list[str]) -> str | None:
+    """多次裁决取众数（M2'-d 步骤 2：多数投票压 judge 采样噪声）。
+
+    严格多数（票数 > n/2）才有效；平票（1-1-1 / 2-2）返回 None——调用方
+    记 error 行留名，不许把没有共识的投票编造成一条读数。
+    """
+    if not winners:
+        raise ValueError("投票列表为空——没有票就没有众数，静默返回 None 是假绿")
+    counts: dict[str, int] = {}
+    for w in winners:
+        counts[w] = counts.get(w, 0) + 1
+    top_value, top_count = max(counts.items(), key=lambda kv: kv[1])
+    return top_value if top_count * 2 > len(winners) else None
+
+
 def build_pairs(samples_a: list, samples_b: list, mode: str = "diagonal") -> list[tuple]:
     """两臂样本 → 成对比较列表 [(transcript_a, transcript_b, pair_index)]。
 

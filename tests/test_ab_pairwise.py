@@ -18,6 +18,7 @@ from scripts.eval.ab_pairwise import (
     build_pairs,
     build_pair_prompt,
     judge_pair,
+    majority_verdict,
     map_winner,
     parse_verdict,
 )
@@ -318,3 +319,32 @@ class TestPairPromptReasoningSpace:
     def test_verdict_still_required_with_rationale(self):
         prompt = build_pair_prompt("x", "t1", "t2")
         assert "裁决" in prompt and "理由" in prompt
+
+
+class TestMajorityVerdict:
+    """M2'-d 步骤 2（多数投票）：每序 ×3 取众数，压 judge 采样噪声。
+
+    口径不变（90% 互换门槛 / decisive ≥30 原样）——投票只降单次裁决的
+    方差，不改读数定义。无众数（1-1-1）返回 None 由调用方记 error 行：
+    宁可少一对，不进一条编造的读数。
+    """
+
+    def test_unanimous(self):
+        assert majority_verdict(["a", "a", "a"]) == "a"
+
+    def test_two_of_three_majority(self):
+        assert majority_verdict(["a", "b", "a"]) == "a"
+        assert majority_verdict(["tie", "tie", "b"]) == "tie"
+
+    def test_split_three_ways_has_no_majority(self):
+        assert majority_verdict(["a", "b", "tie"]) is None
+
+    def test_even_split_has_no_majority(self):
+        assert majority_verdict(["a", "b"]) is None
+
+    def test_two_votes_agree(self):
+        assert majority_verdict(["b", "b"]) == "b"
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError):
+            majority_verdict([])

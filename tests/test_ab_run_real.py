@@ -288,6 +288,57 @@ class TestJudgePairRows:
         assert "503" in rows[0]["error_ab"]
 
 
+class _CyclingJudge:
+    """按调用序返回预设裁决（循环），用于投票路径的众数/无众数/脏票测试。"""
+
+    def __init__(self, answers: list[str]) -> None:
+        self.answers = answers
+        self.calls = 0
+
+    async def __call__(self, prompt: str) -> str:
+        answer = self.answers[self.calls % len(self.answers)]
+        self.calls += 1
+        return answer
+
+
+def _one_pair() -> list[dict]:
+    return [{
+        "case_id": "demo", "pair_index": 0,
+        "left": {"transcript": "t1"}, "right": {"transcript": "t2"},
+        "case_prompt_text": "问", "prior_context": "",
+    }]
+
+
+class TestJudgePairRowsWithVotes:
+    """M2'-d 步骤 2（多数投票）：每序 ×3 取众数，口径不变、脏票不留读数。"""
+
+    async def test_majority_of_three_wins_with_votes_recorded(self):
+        # 每序 3 次调用：1,1,平局 → 众数 1。ab 序位置1=左 → a；ba 序位置1=右 → b
+        judge = _CyclingJudge(["裁决: 1\n理由: x", "裁决: 1\n理由: x", "裁决: 平局\n理由: x"])
+        rows = await judge_pair_rows(_one_pair(), judge, ground_truth="", votes=3)
+        assert judge.calls == 6
+        row = rows[0]
+        assert row["verdict_ab"] == "a" and row["verdict_ba"] == "b"
+        assert row["votes_ab"] == ["a", "a", "tie"]
+        assert row["votes_ba"] == ["b", "b", "tie"]
+        assert row["raw_ab"].count("理由") == 3  # 三票原文全留，可审计
+
+    async def test_three_way_split_is_error_row_not_fabricated(self):
+        judge = _CyclingJudge(["裁决: 1\n理由: x", "裁决: 2\n理由: x", "裁决: 平局\n理由: x"])
+        rows = await judge_pair_rows(_one_pair(), judge, ground_truth="", votes=3)
+        row = rows[0]
+        assert row["verdict_ab"] is None and row["verdict_ba"] is None
+        assert "众数" in row["error_ab"] and "众数" in row["error_ba"]
+
+    async def test_one_dirty_vote_poisons_the_order(self):
+        # 第二票脏输出 → 该序整体 error（宁可少一对，不进 2/3 塌缩读数）
+        answers = ["裁决: 1\n理由: x", "都差不多", "裁决: 1\n理由: x"]
+        judge = _CyclingJudge(answers)
+        rows = await judge_pair_rows(_one_pair(), judge, ground_truth="", votes=3)
+        assert rows[0]["verdict_ab"] is None
+        assert "判" in rows[0]["error_ab"]
+
+
 class TestSelectDualJudgePairs:
     def test_one_pair_per_case_until_n(self):
         rows = [{"case_id": f"c{i}", "pair_index": 0} for i in range(5)]

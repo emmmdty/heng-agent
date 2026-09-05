@@ -45,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from app.application.harness.run_identity import describe_run  # noqa: E402
 from app.infrastructure.transient import describe_error  # noqa: E402
-from scripts.eval.ab_pairwise import judge_pair  # noqa: E402
+from scripts.eval.ab_pairwise import judge_pair, majority_verdict  # noqa: E402
 from scripts.eval.ab_report import _fmt_rate  # noqa: E402  # 渲染与收尾摘要共用同一格式化
 from scripts.eval.ab_stats import (  # noqa: E402
     bootstrap_ci_win_rate,
@@ -80,7 +80,7 @@ _DUAL_JUDGE_MAX_PAIRS = 20
 _ARMS = (("A", "arm_a_url"), ("B", "arm_b_url"))
 
 
-def plan_ab_run(cases: list[dict], k: int, pairing: str = "diagonal", seconds_per_intent: float | None = None) -> dict:
+def plan_ab_run(cases: list[dict], k: int, pairing: str = "diagonal", seconds_per_intent: float | None = None, votes: int = 1) -> dict:
     """A/B 跑测的账本：用例执行数 / 意图数 / judge 调用数 / 墙钟估算。
 
     这是前置 P1-4 重算的代码化（原文"2 整轮 full/220 次意图"与 k=2 双臂
@@ -107,7 +107,7 @@ def plan_ab_run(cases: list[dict], k: int, pairing: str = "diagonal", seconds_pe
     intents = intents_per_pass * 2 * k
     pairs_per_case = k if pairing == "diagonal" else k * k
     pairs = len(cases) * pairs_per_case
-    judge_calls = pairs * 2  # 位置互换：每对正反两个顺序各判一次（MT-Bench 口径）
+    judge_calls = pairs * 2 * votes  # 位置互换每对两序；votes>1 时每序再 ×votes 投票（M2'-d 步骤 2）
 
     return {
         "n_cases": len(cases),
@@ -117,6 +117,7 @@ def plan_ab_run(cases: list[dict], k: int, pairing: str = "diagonal", seconds_pe
         "intents": intents,
         "pairs": pairs,
         "judge_calls": judge_calls,
+        "judge_votes": votes,
         "decisive_ceiling": pairs,
         "decisive_gate": 30,
         "decisive_needed_ratio": (30 / pairs) if pairs else None,
@@ -394,13 +395,53 @@ def build_pairs_from_executions(
     return pairs, errors
 
 
+async def _judge_order_votes(
+    judge_call,
+    case_prompt_text: str,
+    transcript_left: str,
+    transcript_right: str,
+    order: tuple[str, str],
+    ground_truth: str,
+    prior_context: str,
+    votes: int,
+) -> dict:
+    """单序判一次（votes=1，历史路径不变）或 votes 次取众数（M2'-d 步骤 2）。
+
+    多数投票压的是 judge 采样噪声（根因 2：温度 0 下 tie↔decision 边界高方差），
+    指标口径不动。纪律不变：任一票异常/脏输出原样向上抛（调用方记 error 行），
+    无众数同样报错——投票不许制造"2/3 塌缩读数"或编造共识。
+    """
+    if votes < 1:
+        raise ValueError(f"votes 至少为 1，收到 {votes}")
+    results = [
+        await judge_pair(
+            judge_call, case_prompt_text, transcript_left, transcript_right,
+            order=order, ground_truth=ground_truth, prior_context=prior_context,
+        )
+        for _ in range(votes)
+    ]
+    if votes == 1:
+        return results[0]
+    winners = [r["winner"] for r in results]
+    mode = majority_verdict(winners)
+    if mode is None:
+        raise RuntimeError(f"{votes} 票无众数（{winners}）——judge 在该对上无稳定共识，无从判定")
+    return {
+        "winner": mode,
+        "rationale": next(r["rationale"] for r in results if r["winner"] == mode),
+        "raw": "\n---\n".join(results[i]["raw"] for i in range(votes)),
+        "votes": winners,
+    }
+
+
 async def judge_pair_rows(
     pairs: list[dict],
     judge_call,
     ground_truth: str,
     progress=None,
+    votes: int = 1,
 ) -> list[dict]:
-    """成对跑判：每对正反两个顺序各判一次，脏判词/网络失败记 error 行。
+    """成对跑判：每对正反两个顺序各判一次（votes>1 时每序 ×votes 取众数），脏判词/网络失败记 error 行。
 
     两行都 None 的对由 ab_stats 计入 n_error；只坏一边的对同样如实在
     error_ab/error_ba 里留名——宁可少一对，不进一条假读数。
@@ -413,30 +454,40 @@ async def judge_pair_rows(
             "rationale_ab": "", "rationale_ba": "",
             "raw_ab": "", "raw_ba": "",
             "error_ab": "", "error_ba": "",
+            "votes_ab": None, "votes_ba": None,
         }
-        try:
-            result = await judge_pair(
-                judge_call, pair["case_prompt_text"],
-                pair["left"]["transcript"], pair["right"]["transcript"],
-                order=("a", "b"), ground_truth=ground_truth,
-                prior_context=pair.get("prior_context", ""),
-            )
-            row.update(verdict_ab=result["winner"], rationale_ab=result["rationale"], raw_ab=result["raw"])
-        except Exception as err:  # noqa: BLE001
-            row["error_ab"] = f"用例 {pair['case_id']} 对 {pair['pair_index']} 正序判词失败：{describe_error(err)}"
-        try:
-            result = await judge_pair(
-                judge_call, pair["case_prompt_text"],
-                pair["right"]["transcript"], pair["left"]["transcript"],
-                order=("b", "a"), ground_truth=ground_truth,
-                prior_context=pair.get("prior_context", ""),
-            )
-            row.update(verdict_ba=result["winner"], rationale_ba=result["rationale"], raw_ba=result["raw"])
-        except Exception as err:  # noqa: BLE001
-            row["error_ba"] = f"用例 {pair['case_id']} 对 {pair['pair_index']} 反序判词失败：{describe_error(err)}"
+        for order_tag, (pos_left, pos_right, order_names, first_key) in (
+            ("ab", (pair["left"], pair["right"], ("a", "b"), "ab")),
+            ("ba", (pair["right"], pair["left"], ("b", "a"), "ba")),
+        ):
+            try:
+                result = await _judge_order_votes(
+                    judge_call, pair["case_prompt_text"],
+                    pos_left["transcript"], pos_right["transcript"],
+                    order_names, ground_truth,
+                    pair.get("prior_context", ""), votes,
+                )
+                row[f"verdict_{first_key}"] = result["winner"]
+                row[f"rationale_{first_key}"] = result["rationale"]
+                row[f"raw_{first_key}"] = result["raw"]
+                if "votes" in result:
+                    row[f"votes_{first_key}"] = result["votes"]
+            except Exception as err:  # noqa: BLE001
+                direction = "正序" if order_tag == "ab" else "反序"
+                row[f"error_{first_key}"] = f"用例 {pair['case_id']} 对 {pair['pair_index']} {direction}判词失败：{describe_error(err)}"
         rows.append(row)
-        if progress is not None:
-            progress(f"   [judge] {pair['case_id']} 对 {pair['pair_index']}: ab={row['verdict_ab']} ba={row['verdict_ba']}")
+        if progress:
+            if row["error_ab"] or row["error_ba"]:
+                mark = "ab=None" if row["error_ab"] else f"ab={row['verdict_ab']}"
+                mark2 = "ba=None" if row["error_ba"] else f"ba={row['verdict_ba']}"
+                progress(f"   [judge] {pair['case_id']} 对 {pair['pair_index']}: {mark} {mark2}")
+            elif votes > 1:
+                progress(
+                    f"   [judge] {pair['case_id']} 对 {pair['pair_index']}: "
+                    f"ab={row['verdict_ab']}{row['votes_ab']} ba={row['verdict_ba']}{row['votes_ba']}"
+                )
+            else:
+                progress(f"   [judge] {pair['case_id']} 对 {pair['pair_index']}: ab={row['verdict_ab']} ba={row['verdict_ba']}")
     return rows
 
 
@@ -510,6 +561,7 @@ async def run_ab_pipeline(
     positive_control: bool = False,
     progress=None,
     seconds_per_intent: float | None = None,
+    votes: int = 1,
     judge_client: httpx.AsyncClient | None = None,
 ) -> dict:
     """A/B 真实跑测三段管线：执行 → 配对判 → 统计与报告。
@@ -540,7 +592,7 @@ async def run_ab_pipeline(
             "（授权文档第一节：≤20 对 × 2 顺序）——超限是预算边界，不是调个参数就行。"
         )
 
-    plan = plan_ab_run(cases, k, pairing, seconds_per_intent=seconds_per_intent)  # 与 dry-run 同一份账本
+    plan = plan_ab_run(cases, k, pairing, seconds_per_intent=seconds_per_intent, votes=votes)  # 与 dry-run 同一份账本
     exec_plan = build_execution_plan(cases, k)
     order = {
         triple_key(item["case_id"], item["arm"], item["sample_index"]): index
@@ -604,8 +656,9 @@ async def run_ab_pipeline(
 
     pairs, pair_errors = build_pairs_from_executions(results, cases, k, pairing)
     judge_call = judge_factory(judge_model) if judge_factory else make_judge_call(judge_client or client, judge_model)
-    progress(f"[judge] {len(pairs)} 对 × 2 顺序 = {len(pairs) * 2} 次评审调用（{judge_model}）")
-    rows = await judge_pair_rows(pairs, judge_call, ground_truth, progress=progress)
+    vote_note = f"（每序 ×{votes} 投票取众数，M2'-d 步骤 2）" if votes > 1 else ""
+    progress(f"[judge] {len(pairs)} 对 × 2 顺序 = {len(pairs) * 2 * votes} 次评审调用（{judge_model}）{vote_note}")
+    rows = await judge_pair_rows(pairs, judge_call, ground_truth, progress=progress, votes=votes)
 
     dual_payload = None
     if dual_judge_pairs > 0:
@@ -856,6 +909,7 @@ def run_dry_run(
     allow_stale_service: bool = False,
     allow_ephemeral_data_dir: bool = False,
     allow_degraded_probe: bool = False,
+    votes: int = 1,
 ) -> str:
     """两臂前置检查 + 账本渲染，返回报告文本。只读 /health，不发模型调用。"""
     notes = preflight(
@@ -868,7 +922,7 @@ def run_dry_run(
     )
     healths = {"A": health_a, "B": health_b}
     urls = {"A": arm_a_url, "B": arm_b_url}
-    plan = plan_ab_run(cases, k)
+    plan = plan_ab_run(cases, k, votes=votes)
     lines = _arm_header_lines(healths, urls, judge_model)
     lines.extend(notes)
     lines.append("")
@@ -924,7 +978,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     lines = _arm_header_lines(healths, urls, judge_model)
     lines.extend(notes)
-    plan = plan_ab_run(cases, args.k, args.pairing, seconds_per_intent=args.seconds_per_intent)
+    plan = plan_ab_run(cases, args.k, args.pairing, seconds_per_intent=args.seconds_per_intent, votes=args.judge_votes)
     lines.append("")
     lines.extend(_plan_lines(plan))
     print("\n".join(lines), flush=True)
@@ -960,6 +1014,7 @@ async def main_async(args: argparse.Namespace) -> int:
             resume_path=Path(args.resume) if args.resume else None,
             positive_control=args.positive_control,
             seconds_per_intent=args.seconds_per_intent,
+            votes=args.judge_votes,
             progress=print,  # 逐执行/逐判进度进 stdout——过夜跑必须可观察
         )
     print(f"\n报告已写入：{payload['report_path']}")
@@ -999,6 +1054,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--positive-control", action="store_true",
                         help="本轮臂 B 是已知更差的提示词（阳性对照，报告按有效性自证渲染）")
     parser.add_argument("--eval-dir", default=str(EVAL_DIR), help="产物目录（默认 eval/，ab- 前缀分桶）")
+    parser.add_argument("--judge-votes", type=int, default=1,
+                        help="每对每序投票次数取众数（M2'-d 步骤 2；默认 1=单次裁决，judge 成本 ×N）")
     parser.add_argument("--seconds-per-intent", type=float, default=None,
                         help="墙钟估算的秒/意图系数（默认 R7 实测 51.6，模型或用例集变了用实测值覆盖）")
     parser.add_argument("--allow-semantic-cache", action="store_true")
