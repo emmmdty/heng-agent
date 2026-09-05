@@ -24,7 +24,13 @@ def _now_iso() -> str:
 
 @dataclass(frozen=True)
 class ConversationTurn:
-    """一轮完整问答。turn_index 由存储层按会话自增，写入时可留空。"""
+    """一轮完整问答。turn_index 由存储层按会话自增，写入时可留空。
+
+    usage 三个字段只对 agent 轮有意义：本轮所有模型调用的求和，由编排器
+    从轨迹里的 llm.usage 事件汇总（二十三期清单 2）。**字段在、值为 0**
+    与**字段不存在**是两种读数：前者是缓存命中轮（没调模型），
+    后者是旧流水（当时还没记账）——成本指标靠这个区分覆盖面。
+    """
 
     session_id: str
     buyer_id: str
@@ -32,6 +38,8 @@ class ConversationTurn:
     content: str
     model: str = ""
     latency_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     created_at: str = field(default_factory=_now_iso)
 
     def __post_init__(self) -> None:

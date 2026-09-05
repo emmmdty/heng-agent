@@ -63,6 +63,13 @@ class ConversationMessageRow(Base):
     content: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(64), default="")
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # 本轮模型调用的 token 求和（二十三期清单 2）。create_all 不会改已存在的表：
+    # 老库上 INSERT 会因缺列整体失败（被编排器吞成 warning，轮记录消失），
+    # 必须重建库或手工执行：
+    #   ALTER TABLE conversation_messages ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0;
+    #   ALTER TABLE conversation_messages ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0;
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     __table_args__ = (Index("ix_msg_session_turn", "session_id", "turn_index"),)

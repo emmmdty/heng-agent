@@ -6,7 +6,7 @@
 #
 # make 遇到非零退出码即中断，六个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
-.PHONY: check check-ci test datasets cases provenance arithmetic contact basket knowledge eval eval-smoke variance health serve serve-faults
+.PHONY: check check-ci test datasets cases provenance arithmetic contact basket knowledge eval eval-smoke variance cost health serve serve-faults
 
 check: test datasets cases provenance arithmetic contact basket knowledge
 	@echo "== 门禁通过 =="
@@ -100,6 +100,12 @@ eval-smoke:
 # 不量方差只能靠感觉答，而靠感觉答的结果是真退化被当成抖动放过。
 variance:
 	uv run python scripts/eval/variance.py
+
+# token 成本 / 轮延迟：读流水的 usage 与 latency_ms（二十三期清单 2）。
+# 零模型成本（只读已落盘的流水），不进 check——它是报告不是判据。
+# usage 字段自二十三期起才有；旧流水只出延迟读数，token 覆盖面会被点名。
+cost:
+	uv run python scripts/eval/audit_cost_latency.py --report latest
 
 # 外部依赖体检：两条隧道 + 应用。读数不对时先查这里，再去看分数。
 health:

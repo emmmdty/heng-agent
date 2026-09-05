@@ -12,6 +12,7 @@ Presentation 层按 shopping_session_id 订阅后推送给前端 WebSocket。
     plan.update         Task 计划变更
     context.compressed  上下文压缩发生（三期：Context 工程）
     model.fallback      主模型限流重试用尽，已回退到备用模型（四期）
+    llm.usage           一次上游调用的 token 用量，model 记实际服务的模型（二十三期）
     cache.hit           语义缓存命中，本轮未调模型（四期）
     number.unsourced    回复里出现了没有工具出处的金额（五期：金额出处校验）
     arith.inconsistent  回复里写出来的算式等号两边对不上（十九期：算式自洽）
@@ -39,6 +40,7 @@ EVENT_TYPES = (
     "plan.update",
     "context.compressed",
     "model.fallback",
+    "llm.usage",
     "cache.hit",
     "number.unsourced",
     "arith.inconsistent",

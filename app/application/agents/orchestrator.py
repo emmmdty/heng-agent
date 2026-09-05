@@ -184,9 +184,17 @@ class MainAgentOrchestrator:
         """
         if self._number_sources is not None:
             self._number_sources.reset(session_id)
+        if self._contact_sources is not None:
+            # 二十一期加的按会话累积结构，加入时漏进了清理清单——
+            # soak 首轮 RSS 未持平，静态排查抓到的确定泄漏点之一
+            self._contact_sources.reset(session_id)
+        if self._knowledge_sources is not None:
+            # 二十二期加的，同上一条
+            self._knowledge_sources.reset(session_id)
         if self._confirmation is not None:
             self._confirmation.reset(session_id)
-        self._loop_detector.reset(session_id)
+        if self._loop_detector is not None:
+            self._loop_detector.reset(session_id)
         if self._drift_detector is not None:
             self._drift_detector.reset(session_id)
 
@@ -494,6 +502,26 @@ class MainAgentOrchestrator:
             ),
         )
 
+    def _summarize_usage(self, events: list[ConversationEventRecord]) -> tuple[str, int, int]:
+        """把本轮轨迹里的 llm.usage 事件汇总成 (模型, prompt, completion)。
+
+        汇总的消费方是 turn 记录："每意图 token"以轮为界，指标脚本按 turn
+        聚合，不必去流水里做事件-轮次的相关（落盘顺序不等于发生顺序，地雷 10）。
+        模型取**最后一次**调用实际服务的那个——回退发生时它才是真正花了
+        最多 token 的模型。事件缺失（旧流水 / 没调模型）返回 ("", 0, 0)。
+        """
+        usage_events = [
+            e.payload for e in events
+            if e.type == "llm.usage" and isinstance(e.payload, dict)
+        ]
+        prompt_total = sum(int(p.get("prompt_tokens") or 0) for p in usage_events)
+        completion_total = sum(int(p.get("completion_tokens") or 0) for p in usage_events)
+        model_name = next(
+            (str(p.get("model")) for p in reversed(usage_events) if p.get("model")),
+            "",
+        )
+        return model_name, prompt_total, completion_total
+
     async def _record_conversation(
         self,
         intent: SubmitIntentInput,
@@ -505,6 +533,7 @@ class MainAgentOrchestrator:
         if self._conversation_store is None:
             return
         session_id = intent.shopping_session_id
+        model_name, prompt_tokens, completion_tokens = self._summarize_usage(events)
         try:
             await self._conversation_store.touch_session(
                 session_id, intent.buyer_id, intent.locale, intent.currency,
@@ -523,7 +552,10 @@ class MainAgentOrchestrator:
                     buyer_id=intent.buyer_id,
                     role="agent",
                     content=final_text,
+                    model=model_name,
                     latency_ms=latency_ms,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
                 ),
             )
             await self._conversation_store.append_events(events)

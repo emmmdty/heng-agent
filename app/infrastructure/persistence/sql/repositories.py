@@ -137,6 +137,8 @@ class SqlConversationStore(ConversationStore):
                     content=turn.content,
                     model=turn.model,
                     latency_ms=turn.latency_ms,
+                    prompt_tokens=turn.prompt_tokens,
+                    completion_tokens=turn.completion_tokens,
                 ),
             )
             await db.commit()
@@ -176,6 +178,8 @@ class SqlConversationStore(ConversationStore):
                 content=row.content,
                 model=row.model,
                 latency_ms=row.latency_ms,
+                prompt_tokens=row.prompt_tokens,
+                completion_tokens=row.completion_tokens,
                 created_at=row.created_at.isoformat() if row.created_at else "",
             )
             for row in rows

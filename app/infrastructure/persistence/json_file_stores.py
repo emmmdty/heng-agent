@@ -130,6 +130,8 @@ class JsonFileConversationStore(ConversationStore):
                 "content": turn.content,
                 "model": turn.model,
                 "latency_ms": turn.latency_ms,
+                "prompt_tokens": turn.prompt_tokens,
+                "completion_tokens": turn.completion_tokens,
                 "created_at": turn.created_at,
             },
         )
@@ -168,6 +170,9 @@ class JsonFileConversationStore(ConversationStore):
                     content=record.get("content", ""),
                     model=record.get("model", ""),
                     latency_ms=record.get("latency_ms", 0),
+                    # 旧流水没有这两个键：读回 0 而不是炸——审计工具要能扫历史目录
+                    prompt_tokens=record.get("prompt_tokens", 0),
+                    completion_tokens=record.get("completion_tokens", 0),
                     created_at=record.get("created_at", ""),
                 ),
             )
