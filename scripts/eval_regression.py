@@ -182,7 +182,21 @@ async def call_llm_with_retry(client: httpx.AsyncClient, payload: dict) -> str:
                 timeout=120,
             )
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            body = response.json()
+            choice = body["choices"][0]
+            message = choice.get("message") or {}
+            # 推理模型（longcat-2.0 实测）把输出预算烧在 reasoning 上时，
+            # message 会缺 content 键或置 null——裸 KeyError 只有异常名没有
+            # 机制，error 行没法行动。报错留名并指认；temperature 0 下同
+            # prompt 同结局，不按瞬时错误重试（重试只烧配额不改结局）。
+            if message.get("content") is None:
+                raise RuntimeError(
+                    f"judge 响应无 content（finish_reason={choice.get('finish_reason')}，"
+                    f"reasoning_tokens={body.get('usage', {}).get('completion_tokens_details', {}).get('reasoning_tokens')}）"
+                    "——推理模型把 max_tokens 预算烧在 reasoning 上，先调大输出预算；"
+                    "reasoning_content 是不可见思维链，不得当判词解析"
+                )
+            return message["content"]
         except Exception as err:  # noqa: BLE001
             if not is_transient_error(err) or attempt == _JUDGE_MAX_RETRIES - 1:
                 raise

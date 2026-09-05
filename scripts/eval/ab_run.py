@@ -476,8 +476,11 @@ def make_judge_call(client: httpx.AsyncClient | None, model: str):
             "temperature": 0,
             # CoT 判词（先逐条评估再裁决）在网关默认输出预算下会被截断，
             # 截断的输出没有裁决行=脏输出（双 judge 轮 7/24 解析失败实测）——
-            # 给足预算是传输配置，不是判据放宽
-            "max_tokens": 2000,
+            # 给足预算是传输配置，不是判据放宽。2000 是按 content 长度定的；
+            # 先导v2 实测 longcat-2.0 是推理模型，仅 reasoning 就烧 ~3800
+            # （M2'-b 六条判据提示词更重），预算内出不来 content → 计费按
+            # 实际用量，上限调高不产生额外成本。
+            "max_tokens": 12000,
         })
 
     return judge_call

@@ -231,6 +231,56 @@ class TestCallLlmWithRetry:
             await er.call_llm_with_retry(client, {"model": "m"})
         assert client.calls == 1
 
+    class _NoContentClient:
+        """先导v2 实测形态：推理模型把输出预算烧在 reasoning 上（reasoning_tokens
+        1999/2000，finish_reason=length），网关返回的 message 只有 reasoning_content
+        键——8/32 次 judge 调用 KeyError: 'content'。"""
+
+        def __init__(self, message: dict) -> None:
+            self.message = message
+            self.calls = 0
+
+        async def post(self, url, headers=None, json=None, timeout=None):
+            self.calls += 1
+            message = self.message
+
+            class _Resp:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return {
+                        "choices": [{
+                            "finish_reason": "length",
+                            "message": message,
+                        }],
+                        "usage": {"completion_tokens": 2000},
+                    }
+
+            return _Resp()
+
+    async def test_missing_content_key_raises_loud_no_retry(self, monkeypatch):
+        """message 无 content 键必须报错留名并指认机制——不许静默返回 None、
+        不许把 reasoning_content 当判词。temperature 0 下同 prompt 同结局，
+        不按瞬时错误重试（重试只烧配额不改结局）。"""
+        monkeypatch.setattr(er, "_JUDGE_RETRY_BASE_SECONDS", 0.001)
+        client = self._NoContentClient({"role": "assistant", "reasoning_content": "推理文本"})
+        with pytest.raises(RuntimeError) as err:
+            await er.call_llm_with_retry(client, {"model": "m"})
+        assert "content" in str(err.value)
+        assert "reasoning" in str(err.value)
+        assert client.calls == 1
+
+    async def test_null_content_raises_loud(self, monkeypatch):
+        """content 键存在但为 null 同样算无产出（有的网关不删键只置空）。"""
+        monkeypatch.setattr(er, "_JUDGE_RETRY_BASE_SECONDS", 0.001)
+        client = self._NoContentClient(
+            {"role": "assistant", "content": None, "reasoning_content": "推理文本"}
+        )
+        with pytest.raises(RuntimeError, match="content"):
+            await er.call_llm_with_retry(client, {"model": "m"})
+        assert client.calls == 1
+
 
 class TestFaultClearVisibility:
     """独立审查（M1 增量复核）：清理失败的可见性必须覆盖两条路径。"""
