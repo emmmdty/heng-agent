@@ -47,15 +47,33 @@ class VerdictParseError(ValueError):
     """判词脏数据。向上抛、由调用方记 error 行留名，不许在本层塌缩成读数。"""
 
 
-def build_pair_prompt(case_prompt_text: str, transcript_left: str, transcript_right: str) -> str:
+def build_pair_prompt(
+    case_prompt_text: str,
+    transcript_left: str,
+    transcript_right: str,
+    ground_truth: str = "",
+    prior_context: str = "",
+) -> str:
     """构造盲判提示词：judge 只看到"回复1/回复2"，看不到任何版本身份。
 
     平局口径：两份回复质量相当、没有一方明显更好——不设倾向性描述，
     描述写得太具体会替 judge 做决定。
+
+    ground_truth（build_ground_truth 的产物）与会话前置事实是**实现决策不是
+    口径变更**（授权文档 M1）：judge 要判"哪份回复的事实更可靠"，手上必须有
+    工具口径的事实基准——本仓 rubric judge 一贯喂事实表，成对比较没有理由
+    更穷。盲判约束只针对**版本身份**，不针对事实表；不喂事实表的成对比较
+    只能比文笔。prior_context 防的是另一类误判：memory-recall 应用历史偏好
+    会被当成无据编造（eval_regression 的 JUDGE_SYSTEM_PROMPT 同一条先例）。
+    两段为空就整段省略，不给 judge 留"事实表：未知"的空段落。
     """
+    ground_block = f"【商品库事实表】\n{ground_truth}\n\n" if ground_truth else ""
+    prior_block = f"【会话前置事实】\n{prior_context}\n\n" if prior_context else ""
     return (
         "你是电商购物助手的评测评审。下面是同一位买家的同一请求，"
         "以及两个助手回复（回复1 与 回复2）。请判断哪个回复更好。\n\n"
+        f"{ground_block}"
+        f"{prior_block}"
         "【买家请求】\n"
         f"{case_prompt_text}\n\n"
         "【回复1】\n"
@@ -162,13 +180,18 @@ async def judge_pair(
     transcript_a: str,
     transcript_b: str,
     order: tuple[str, str] = ("a", "b"),
+    ground_truth: str = "",
+    prior_context: str = "",
 ) -> dict:
     """跑一次成对比较：提示词 → judge → 解析 → 映射臂名。
 
     judge_call 抛的异常（网络/限流）与解析抛的 VerdictParseError 都**原样向上抛**，
     由调用方记 error 行——本层不做任何静默兜底。
     """
-    prompt = build_pair_prompt(case_prompt_text, transcript_a, transcript_b)
+    prompt = build_pair_prompt(
+        case_prompt_text, transcript_a, transcript_b,
+        ground_truth=ground_truth, prior_context=prior_context,
+    )
     raw = await judge_call(prompt)
     verdict = parse_verdict(raw)
     return {

@@ -209,3 +209,54 @@ def decisive_pairs_gate(summary: dict, min_pairs: int = 30) -> dict:
         "min_pairs": min_pairs,
         "sufficient": summary["n_decisive"] >= min_pairs,
     }
+
+
+def decisive_indicators(rows: list[dict]) -> tuple[list[str], list[tuple[str, int]], int]:
+    """从成对判行提取三样读数，只取**位置互换一致**的对：
+
+    - win feed：一致对的 verdict_ab（"a"/"b"/"tie"）——正序读数，反序只作
+      一致性校验（MT-Bench 口径：正反两判一致才可信）；
+    - CI 对：一致对里的决定性对 (case_id, 1 if a else 0)，平局不进
+      （符号检验与 CI 都是去平局口径）；
+    - n_flip：两序都判了但结论相反的对数。噪声对等权计入会污染读数，
+      丢掉不许静默——调用方必须在报告里点名这个数。
+
+    error 行（任一方向失败）这里直接跳过：它们由 position_swap_consistency
+    计数，两处不重复计。所有行 verdict 都缺失时返回空表——空读数由上游
+    如实渲染"无从判定"，本函数不伪造。
+    """
+    feed: list[str] = []
+    ci_pairs: list[tuple[str, int]] = []
+    n_flip = 0
+    for row in rows:
+        verdict_ab, verdict_ba = row.get("verdict_ab"), row.get("verdict_ba")
+        if verdict_ab is None or verdict_ba is None:
+            continue
+        if verdict_ab != verdict_ba:
+            n_flip += 1
+            continue
+        feed.append(verdict_ab)
+        if verdict_ab in ("a", "b"):
+            ci_pairs.append((row["case_id"], 1 if verdict_ab == "a" else 0))
+    return feed, ci_pairs, n_flip
+
+
+def judge_agreement(rows: list[dict]) -> dict:
+    """双 judge 一致率：同一对同一顺序，两个 judge 的裁决一致的比例。
+
+    只作 judge 可信度证据（指标表：不参与胜负判定、不与 rubric 分数横比）。
+    任一方向失败的对进 n_error 不进分母——"judge 挂了一半"洗不成"一致率高"，
+    同 position_swap_consistency 的规矩。
+    """
+    n = 0
+    agree = 0
+    n_error = 0
+    for row in rows:
+        first, second = row.get("verdict_first"), row.get("verdict_second")
+        if first is None or second is None:
+            n_error += 1
+            continue
+        n += 1
+        if first == second:
+            agree += 1
+    return {"n_pairs": n, "n_agree": agree, "rate": (agree / n) if n else None, "n_error": n_error}

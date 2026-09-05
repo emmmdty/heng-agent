@@ -15,3 +15,7 @@ eval/category-recall-report-*.md
 uvicorn.log
 # 跑测运行日志：与 report-* 同为跑测产物不入库，持久结论回写在 docs 里
 eval/*.log
+# A/B 分流跑测产物（二十五期 M1）：partial 是续跑态、run json / report 是最终产物
+eval/ab-partial-*.json
+eval/ab-run-*.json
+eval/ab-report-*.md

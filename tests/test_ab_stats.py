@@ -15,6 +15,7 @@ import pytest
 from scripts.eval.ab_stats import (
     bootstrap_ci_win_rate,
     decisive_pairs_gate,
+    judge_agreement,
     position_swap_consistency,
     significance,
     sign_test_p,
@@ -233,3 +234,20 @@ class TestDecisivePairsGate:
     def test_missing_key_raises(self):
         with pytest.raises(KeyError):
             decisive_pairs_gate({})
+
+
+class TestJudgeAgreement:
+    def test_agreement_counts_only_pairs_both_judged(self):
+        rows = [
+            {"case_id": "c1", "verdict_first": "a", "verdict_second": "a"},
+            {"case_id": "c1", "verdict_first": "b", "verdict_second": "a"},
+            {"case_id": "c2", "verdict_first": None, "verdict_second": "a"},  # error 行
+        ]
+        result = judge_agreement(rows)
+        assert result["n_pairs"] == 2 and result["n_agree"] == 1
+        assert result["rate"] == 0.5 and result["n_error"] == 1
+
+    def test_all_errors_give_none_rate_not_zero(self):
+        """全部 error 时 rate 无从判定——0/0 伪造的 0% 或 100% 都是假读数。"""
+        result = judge_agreement([{"case_id": "c", "verdict_first": None, "verdict_second": None}])
+        assert result["rate"] is None and result["n_error"] == 1

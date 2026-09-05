@@ -168,6 +168,60 @@ class TestBuildPairs:
             build_pairs(["a"], ["b"], mode="nope")
 
 
+class TestJudgePairContext:
+    """事实表与会话前置事实进判词提示词（授权文档 M1 的实现决策）。
+
+    judge 要判"两份回复哪个事实更可靠"，手上得有工具口径的事实基准
+    （本仓 judge 一贯喂事实表；build_ground_truth 的产出）。盲判约束
+    **只针对版本身份**，不针对事实表——不喂事实表，judge 只能比文笔。
+    会话前置事实同理：memory-recall 应用历史偏好若不告知 judge，
+    会被误判成无据编造（eval_regression 同一条先例）。
+    """
+
+    async def test_ground_truth_block_included(self):
+        captured = {}
+
+        async def fake_judge(prompt: str) -> str:
+            captured["prompt"] = prompt
+            return "裁决: 平局\n理由: 相当"
+
+        await judge_pair(fake_judge, "x", "t1", "t2", ground_truth="| product_id | 价格 |")
+        assert "商品库事实表" in captured["prompt"]
+        assert "| product_id | 价格 |" in captured["prompt"]
+
+    async def test_prior_context_block_included(self):
+        captured = {}
+
+        async def fake_judge(prompt: str) -> str:
+            captured["prompt"] = prompt
+            return "裁决: 平局\n理由: 相当"
+
+        await judge_pair(fake_judge, "x", "t1", "t2", prior_context="买家已写入偏好：不要塑料")
+        assert "会话前置事实" in captured["prompt"]
+        assert "买家已写入偏好：不要塑料" in captured["prompt"]
+
+    def test_ground_truth_and_prior_sections_omitted_when_empty(self):
+        """不传就一个字都不出现——不给 judge 留'事实表：未知'这种空段落。"""
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "事实表" not in prompt
+        assert "前置事实" not in prompt
+
+    def test_context_sections_stay_blind(self):
+        """加段不许破盲判：臂名/变体身份不得借道进入提示词。"""
+        prompt = build_pair_prompt(
+            "x", "t1", "t2",
+            ground_truth="| product_id | 价格 |",
+            prior_context="买家已写入偏好",
+        )
+        for banned in ("variant", "候选版", "A 臂", "B 臂", "A臂", "B臂"):
+            assert banned not in prompt
+
+    def test_ground_truth_block_comes_before_transcripts(self):
+        """事实表在回复之前给出：judge 先建立事实基准，再读两份回复。"""
+        prompt = build_pair_prompt("买家请求x", "回复左", "回复右", ground_truth="事实表内容")
+        assert prompt.index("事实表内容") < prompt.index("回复左")
+
+
 class TestJudgePair:
     async def test_legal_judge_maps_to_arm(self):
         async def fake_judge(prompt: str) -> str:
