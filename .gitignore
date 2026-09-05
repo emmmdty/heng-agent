@@ -19,3 +19,4 @@ eval/*.log
 eval/ab-partial-*.json
 eval/ab-run-*.json
 eval/ab-report-*.md
+eval/ab-judgeprobe-*.json
