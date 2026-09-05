@@ -17,6 +17,13 @@
     suspected_difference   约等于两数之差       —— 典型是"预算还剩多少"
     unsourced              找不到成因
 
+**暴露面双指标**（二十三期清单 1）：无出处金额数与"疑似自行算术数"
+（suspected_sum / difference / basket_misadd 的候选数）**分开呈现**。
+比率指标有一个 Goodhart 口子——模型少写解释性算术，分子分母一起缩，
+比率照样好看，但那不是修复，是少干活。两个数一起读才能分辨
+"暴露面下降"究竟是缺陷变少，还是解释变少：
+门禁判的仍是"无出处金额率"，本拆分不改判定、只改呈现。
+
 注意分类会有巧合命中（三个金额凑出的和恰好等于另一个金额），所以它不参与
 "通过与否"的判定，只写在报告里供人复核。
 
@@ -40,6 +47,10 @@ from scripts.eval.trace_audit import SessionAudit, audit_directory  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DIR = PROJECT_ROOT / "data" / "conversations"
+
+# "疑似自行算术"的构成：模型把工具数/买家数自己加减出来的三类成因。
+# basket_misadd 是 suspected_sum 的升级形态（确定性违规），同属算术暴露面。
+_ARITHMETIC_KINDS = frozenset({"suspected_sum", "suspected_difference", "basket_misadd"})
 
 
 EVAL_DIR = PROJECT_ROOT / "eval"
@@ -156,6 +167,9 @@ def summarize(audits: list[SessionAudit]) -> dict:
     total = sum(item.total_amounts for item in audits)
     unsourced = sum(len(item.unsourced) for item in audits)
     kinds = Counter(finding.kind for item in audits for finding in item.unsourced)
+    # 暴露面双指标（二十三期清单 1）：自行算术的暴露面 = 判成 sum/difference/
+    # basket_misadd 的部分；两者之差是"连成因都找不到"的纯无出处。
+    arithmetic = sum(count for kind, count in kinds.items() if kind in _ARITHMETIC_KINDS)
     return {
         "sessions": len(audits),
         "sessions_with_findings": sum(1 for item in audits if not item.clean),
@@ -163,6 +177,9 @@ def summarize(audits: list[SessionAudit]) -> dict:
         "total_amounts": total,
         "unsourced_amounts": unsourced,
         "unsourced_ratio": round(unsourced / total, 4) if total else 0.0,
+        "explanatory_arithmetic": arithmetic,
+        "arithmetic_ratio": round(arithmetic / total, 4) if total else 0.0,
+        "pure_unsourced": unsourced - arithmetic,
         "kinds": dict(kinds),
     }
 
@@ -174,6 +191,12 @@ def render(audits: list[SessionAudit], summary: dict) -> str:
         f"{summary['sessions_flagged_at_runtime']} 个在运行时就已告警）｜"
         f"金额 {summary['total_amounts']} 处｜无出处 {summary['unsourced_amounts']} 处"
         f"（{summary['unsourced_ratio']:.1%}）",
+    )
+    # 暴露面双指标：这两个数一起读才能分辨"缺陷变少"还是"解释变少"（Goodhart 口）
+    lines.append(
+        f"其中疑似自行算术 {summary['explanatory_arithmetic']} 处"
+        f"（{summary['arithmetic_ratio']:.1%}）｜"
+        f"纯无出处 {summary['pure_unsourced']} 处",
     )
     if summary["kinds"]:
         lines.append("成因分布：" + "，".join(f"{k} {v}" for k, v in sorted(summary["kinds"].items())))

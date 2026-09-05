@@ -19,10 +19,16 @@ Prompt A/B 分流（主线四）的前置条件也是它：两个分支的分数
 它把我改判据前后的读数混在一起，算出 0.325 的"波动"，
 而那其实是判据被改对了。
 配置行与判据指纹都由报告自己记着，不用人回忆。
+
+整轮均分的分组键是**配置行 + 用例集身份**（二十三期清单 4 的第二处修正）：
+键里原本还含"有效条数"，ERROR 数不同的两轮因此进不了同一组
+（二十期 42 条 vs 二十二期 43 条，都是 44 条的 full），
+整轮散布永远量不出来。修法后条数只作展示列，可比性由用例集身份保证。
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import statistics
@@ -90,25 +96,57 @@ def collect_scores(
     return scores
 
 
+def cases_tag(results: list[dict]) -> str:
+    """一份报告的用例集身份：全部结果的 case id 集合（含 ERROR 轮）。
+
+    分组键第二版用"有效条数"，栽在一个 side effect 上：ERROR 数不同的两轮
+    有效条数就不同——二十期 42 条与二十二期 43 条（都是 44 条的 full，
+    差的那 1 条是环境 ERROR）互相进不了对方的组，整轮散布永远量不出来。
+
+    用例集身份回答的是"这两轮跑的是不是同一份考卷"，这才是可比性的来源：
+    smoke 与 full 集合不同、自然不混；增删了 case 的两轮同样不混；
+    而仅仅 ERROR 数不同的两轮是同一份考卷上的两次读数，必须进同一组。
+    条数本身退出分组，作为展示列随每轮读数带出。
+
+    id 缺失**报错而不是猜**：把缺失映射成空串会让两份同样缺 id 的报告
+    拿到相同的用例集身份、被错误合组——宁可红灯不静默。
+    """
+    ids: list[str] = []
+    for result in results:
+        case_id = result.get("id")
+        if not case_id:
+            raise SystemExit(
+                "报告 results 里有缺 id 的条目，用例集身份算不出来。\n"
+                "  这份报告可能不是本仓评测脚本的产物，或已被手工改动。",
+            )
+        ids.append(str(case_id))
+    digest = hashlib.sha1("\n".join(sorted(ids)).encode("utf-8")).hexdigest()[:8]
+    return f"{len(ids)}例#{digest}"
+
+
 def run_level_means(
     reports: list[dict], require_fingerprint: bool = False,
-) -> dict[str, list[float]]:
-    """每一轮的均分，按（配置行 + 用例集规模）分组。
+) -> dict[str, list[tuple[float, int]]]:
+    """每一轮的均分，按（配置行 + 用例集身份）分组。
 
     人们引用的是均分（"这轮 0.973"），而单条散布回答不了"均分能抖多少"。
-    带上用例数是因为 smoke 轮与 full 轮的均分本来就不可比。
+    返回值是 (均分, 有效条数) 的列表——条数不再参与分组，但人们读表时
+    需要它来发现"这轮少跑了几条"（展示列，不是分组键）。
     """
-    means: dict[str, list[float]] = defaultdict(list)
+    means: dict[str, list[tuple[float, int]]] = defaultdict(list)
     for report in reports:
+        results = report.get("results") or []
         valid = [
-            r for r in report.get("results") or []
+            r for r in results
             if r.get("verdict") != "ERROR"
             and (not require_fingerprint or r.get("rubric_fingerprint"))
         ]
         if not valid:
             continue
-        key = f"{config_key(report)}｜{len(valid)} 条"
-        means[key].append(statistics.fmean(float(r.get("score", 0.0)) for r in valid))
+        key = f"{config_key(report)}｜{cases_tag(results)}"
+        means[key].append(
+            (statistics.fmean(float(r.get("score", 0.0)) for r in valid), len(valid)),
+        )
     return means
 
 
@@ -174,11 +212,13 @@ def main() -> int:
     repeated = {k: v for k, v in means.items() if len(v) >= args.min_runs}
     if repeated:
         print("\n## 整轮均分的波动（人们引用的就是这个数）\n")
-        print("| 配置｜规模 | 轮次 | 最低 | 最高 | 散布 |")
-        print("|---|---|---|---|---|")
+        print("| 配置｜用例集 | 轮次 | 有效条数 | 最低 | 最高 | 散布 |")
+        print("|---|---|---|---|---|---|---|")
         for key, values in sorted(repeated.items()):
-            print(f"| {key[-40:]} | {len(values)} | {min(values):.3f} | {max(values):.3f} "
-                  f"| **{max(values) - min(values):.3f}** |")
+            counts = "/".join(str(count) for _, count in values)
+            scores = [mean for mean, _ in values]
+            print(f"| {key[-40:]} | {len(values)} | {counts} | {min(scores):.3f} "
+                  f"| {max(scores):.3f} | **{max(scores) - min(scores):.3f}** |")
 
     unstable = [row for row in rows if row["spread"] > 0]
     print(f"\n同配置下分数有波动的用例：{len(unstable)} / {len(rows)}")

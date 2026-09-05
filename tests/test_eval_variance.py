@@ -93,24 +93,60 @@ class TestRequireFingerprint:
 
 
 class TestRunLevelMeans:
-    """整轮均分的波动——人们引用的就是这个数，而单条散布回答不了它。"""
+    """整轮均分的波动——人们引用的就是这个数，而单条散布回答不了它。
 
-    def test_groups_by_config_and_size(self):
+    分组键的第二处修正（二十三期清单 4）：键里原本还含"有效条数"，
+    而 ERROR 数不同的两轮有效条数就不同——二十期 42 条与二十二期 43 条
+    （都是 44 条的 full，差的那 1 条是环境 ERROR）互相进不了对方的组，
+    整轮散布永远量不出来。修法：键改用**用例集身份**（报告里全部结果的
+    case id 集合，含 ERROR 轮），条数本身退出分组、只作展示列。
+    """
+
+    def test_groups_by_config_and_case_set(self):
         from scripts.eval.variance import run_level_means
 
         means = run_level_means([
             _report("A", [_result("c1", 1.0), _result("c2", 0.8)]),
             _report("A", [_result("c1", 1.0), _result("c2", 1.0)]),
         ])
-        assert list(means.values()) == [[0.9, 1.0]]
+        assert list(means.values()) == [[(0.9, 2), (1.0, 2)]]
+
+    def test_error_count_difference_does_not_split_groups(self):
+        """核心红测试：同配置、同用例集，仅 ERROR 数不同的两轮必须进同一组。
+
+        旧键含"有效条数"（2 条 vs 3 条）时它们是两组，整轮方差对
+        "有过 ERROR 的轮次"永远闭口——而 ERROR 恰恰是真实评测的常态。"""
+        from scripts.eval.variance import run_level_means
+
+        means = run_level_means([
+            _report("A", [
+                _result("c1", 1.0), _result("c2", 0.8),
+                _result("c3", 0.0, verdict="ERROR"),
+            ]),
+            _report("A", [_result("c1", 1.0), _result("c2", 1.0), _result("c3", 1.0)]),
+        ])
+        assert len(means) == 1, f"ERROR 数不同不该拆组，实际 {sorted(means)}"
+        (values,) = means.values()
+        assert values == [(0.9, 2), (1.0, 3)], "每轮读数必须把有效条数带出来当展示列"
 
     def test_smoke_and_full_do_not_mix(self):
-        """12 条的均分与 44 条的均分本来就不可比。"""
+        """12 条的均分与 44 条的均分本来就不可比——用例集不同，自然不混。"""
         from scripts.eval.variance import run_level_means
 
         means = run_level_means([
             _report("A", [_result("c1", 1.0)]),
             _report("A", [_result("c1", 1.0), _result("c2", 1.0)]),
+        ])
+        assert len(means) == 2
+
+    def test_case_set_change_splits_groups_even_at_same_size(self):
+        """同一条数但换了用例集（增删了 case）同样不混——可比性由用例集保证，
+        不由条数保证：两条换成的另外两条，均分没有可比性。"""
+        from scripts.eval.variance import run_level_means
+
+        means = run_level_means([
+            _report("A", [_result("c1", 1.0), _result("c2", 1.0)]),
+            _report("A", [_result("c3", 1.0), _result("c4", 1.0)]),
         ])
         assert len(means) == 2
 

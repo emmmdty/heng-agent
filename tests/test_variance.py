@@ -79,7 +79,18 @@ class TestGroupingEndToEnd:
         assert scores[same_config[0]] == [1.0, 0.75]
 
     def test_run_level_means_groups_across_restarts(self):
-        reports = [_report(FRESH_A, "a", 1.0), _report(FRESH_B, "b", 0.8)]
+        """同配置、同用例集，仅启动时刻不同的两轮进同一组。
+
+        注意两条报告必须是**同一个 case id**：整轮均分的可比性由用例集身份
+        保证（二十三期清单 4），跑的不是同一份考卷就不该进同一组。"""
+        reports = [_report(FRESH_A, "a", 1.0), _report(FRESH_B, "a", 0.8)]
         means = run_level_means(reports)
         assert len(means) == 1
-        assert means[next(iter(means))] == [1.0, 0.8]
+        assert means[next(iter(means))] == [(1.0, 1), (0.8, 1)]
+
+    def test_run_level_means_different_case_sets_do_not_group(self):
+        """不同用例集（这里是不同 case id）不进同一组——12 条 smoke 与
+        44 条 full 的均分本来就不可比。"""
+        reports = [_report(FRESH_A, "a", 1.0), _report(FRESH_B, "b", 0.8)]
+        means = run_level_means(reports)
+        assert len(means) == 2
