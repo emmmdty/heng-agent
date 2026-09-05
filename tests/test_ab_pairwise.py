@@ -252,3 +252,25 @@ class TestJudgePair:
             return "裁决: 平局\n理由: 两份回复事实一致"
 
         assert (await judge_pair(fake_judge, "x", "ta", "tb"))["winner"] == "tie"
+
+
+class TestPairPromptReasoningSpace:
+    """互换一致率 78.3%（先导档）的判段修复：给 judge 推理空间。
+
+    翻转全部落在模糊对上，判词形态是"先裁决后一句理由"——没有逐条独立
+    评估的空间，位置敏感性高（MT-Bench/Arena-Hard 的已知问题，标准缓解是
+    CoT 先评再裁 + 显式位置中性声明）。这是工具侧修复，指标口径不变。
+    """
+
+    def test_prompt_asks_for_per_reply_analysis_before_verdict(self):
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "分别" in prompt and "评估" in prompt  # 先逐条独立评估
+        assert "再给" in prompt  # 然后才给裁决
+
+    def test_prompt_declares_position_neutrality(self):
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "顺序" in prompt and ("无关" in prompt or "不影响" in prompt)
+
+    def test_verdict_still_required_with_rationale(self):
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "裁决" in prompt and "理由" in prompt

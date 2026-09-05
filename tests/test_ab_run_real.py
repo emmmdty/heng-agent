@@ -920,3 +920,24 @@ class TestJudgeInvalidationRetention:
         payload, _ = await TestRunAbPipeline()._pipeline(tmp_path, [_case("c1")])
         assert payload["significance"]["judge_valid"] is True
         assert not (tmp_path / "ab-partial-20260905-170000.json").exists()
+
+
+class TestJudgeCallTransport:
+    async def test_judge_payload_pins_model_temp_and_max_tokens(self, monkeypatch):
+        """deepseek CoT 被网关默认 max_tokens 截断（双 judge 轮 7/24 解析失败）——
+        判据调用必须显式给足输出预算，截断的判词是脏输出。"""
+        import scripts.eval.ab_run as ab
+
+        captured = {}
+
+        async def fake_retry(client, payload):
+            captured.update(payload)
+            return "裁决: 1\n理由: ok"
+
+        monkeypatch.setattr("scripts.eval_regression.call_llm_with_retry", fake_retry)
+        judge = ab.make_judge_call(client=None, model="deepseek-v4-flash")
+        assert await judge("提示词") == "裁决: 1\n理由: ok"
+        assert captured["model"] == "deepseek-v4-flash"
+        assert captured["temperature"] == 0
+        assert captured["max_tokens"] >= 1500
+        assert captured["messages"][0]["content"] == "提示词"

@@ -474,6 +474,10 @@ def make_judge_call(client: httpx.AsyncClient | None, model: str):
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
+            # CoT 判词（先逐条评估再裁决）在网关默认输出预算下会被截断，
+            # 截断的输出没有裁决行=脏输出（双 judge 轮 7/24 解析失败实测）——
+            # 给足预算是传输配置，不是判据放宽
+            "max_tokens": 2000,
         })
 
     return judge_call
