@@ -254,6 +254,50 @@ class TestJudgePair:
         assert (await judge_pair(fake_judge, "x", "ta", "tb"))["winner"] == "tie"
 
 
+class TestPairPromptEffectDimensions:
+    """M2'-b（根因 2.2-3 的放大器修复）：成对判据补处理效应维度。
+
+    泛 smoke 先导 10/24 对稳定平局——两臂行为本就该一样的用例只贡献
+    tie，稀释一致率分母；候选的真实效应维度（确认卡完整性、算式展示）
+    不在原通用四条判据的视野里，效应可见性为零。新判据 ①②③ 各自锚定
+    已冻结的本仓标准：judge rubric P0 数字事实 / 无出处金额率门禁 ≤8%
+    （provenance 把解释性算式计入暴露面）/ R8 判据对复述数量的扣分
+    先例——不是为臂 B 发明的标准。盲判约束与空段省略行为不变
+    （TestBuildPairPrompt / TestJudgePairContext 既有测试钉住）。
+    """
+
+    def test_fabrication_counts_as_fact_error(self):
+        """判据①：凭空添加商品库没有的参数同样算事实错误（分布级编造）。"""
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "凭空" in prompt
+        assert "事实错误" in prompt
+
+    def test_number_provenance_criterion(self):
+        """判据②：金额应来自工具返回，自行计算的过程式算式算无出处数字。"""
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "算式" in prompt
+        assert "无出处" in prompt
+
+    def test_order_completeness_criterion(self):
+        """判据③：订单写操作前要素完整度（商品/数量/单价/金额带币种）。"""
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "要素完整" in prompt
+        for token in ("数量", "单价", "币种"):
+            assert token in prompt
+
+    def test_criteria_stay_arm_blind(self):
+        """新判据文本必须臂中立：不得借道引入版本身份。"""
+        prompt = build_pair_prompt("x", "t1", "t2")
+        for banned in ("variant", "Variant", "候选版", "A 臂", "B 臂", "A臂", "B臂", "旧版", "新版"):
+            assert banned not in prompt
+
+    def test_per_reply_analysis_instruction_kept(self):
+        """CoT 迭代无效但无回归（格式修复保留）：先逐条评估再裁决。"""
+        prompt = build_pair_prompt("x", "t1", "t2")
+        assert "分别" in prompt and "评估" in prompt
+        assert "再给" in prompt
+
+
 class TestPairPromptReasoningSpace:
     """互换一致率 78.3%（先导档）的判段修复：给 judge 推理空间。
 
