@@ -1,5 +1,13 @@
 # Globex - 跨境电商 Agent（AgentScope 2.0）
 
+> **三分钟版**：这是一个基于 AgentScope 2.0 的跨境电商购物 Agent（检索 / 比价 / 组合 / 下单 / 记忆），
+> 外加一套自建的**可信度工程**：8 类行为判据从 LLM judge 迁移为确定性判据、八项 15 秒零模型成本门禁、
+> 每道护栏"真红一次 + 零误报"的证据链。四个数字：端到端 44 条合成用例结算全 PASS（排除环境 ERROR 均分 0.992）；
+> 无出处金额率 2.9%（历史最好轮，暴露面拆分后可见其中纯编造仅 1 处）；
+> 商品召回 Recall@8 0.967（105 条标注，hybrid_rerank）；judge 判词波动带 0.175（20 条重判，翻转 0 条）。
+> **边界声明**：自建评测、无真实流量、单人标注——定位为可信度工程的方法验证，不是生产系统；
+> 每个数字的复现命令见 [docs/贡献证明.md](docs/贡献证明.md)，适用边界见同文第三节。
+
 基于 AgentScope 2.0 的跨境电商超级搜索框 Agent 系统，DDD 洋葱架构落地：
 
 - **MainAgent**（CommerceConcierge）：超级框总调度，**持有全部业务工具可直接单干**；
@@ -196,8 +204,8 @@ uv run python -m app.worker
 
 - `POST /commerce/intents` 提交买家自然语言意图（同步返回最终回复）
 - `WS   /commerce/events` 订阅会话事件流（连上后先发 `{"shopping_session_id": "..."}`）
-- `GET  /commerce/orders/{order_id}` 查询订单
-- `POST /commerce/orders/{order_id}/cancel` 取消订单
+- `GET  /commerce/orders/{order_id}?buyer_id=` 查询订单（归属校验，非本人订单与不存在订单同读数）
+- `POST /commerce/orders/{order_id}/cancel` 取消订单（body 需带 `buyer_id`，归属校验）
 - `GET  /health` 健康检查
 
 ## 验证
