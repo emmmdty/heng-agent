@@ -1,0 +1,57 @@
+{
+  "sessions_requested": 80,
+  "sessions_done": 80,
+  "errors": [],
+  "elapsed_seconds": 824.7,
+  "lru_max": 200,
+  "rss_samples": [
+    {
+      "sessions": 0,
+      "rss_kb": 1629144,
+      "ts": "23:21:42"
+    },
+    {
+      "sessions": 10,
+      "rss_kb": 1749320,
+      "ts": "23:23:38"
+    },
+    {
+      "sessions": 20,
+      "rss_kb": 1809096,
+      "ts": "23:25:08"
+    },
+    {
+      "sessions": 30,
+      "rss_kb": 1872840,
+      "ts": "23:26:54"
+    },
+    {
+      "sessions": 40,
+      "rss_kb": 1925576,
+      "ts": "23:28:38"
+    },
+    {
+      "sessions": 50,
+      "rss_kb": 1988296,
+      "ts": "23:29:57"
+    },
+    {
+      "sessions": 60,
+      "rss_kb": 2048200,
+      "ts": "23:31:47"
+    },
+    {
+      "sessions": 70,
+      "rss_kb": 2108360,
+      "ts": "23:33:46"
+    },
+    {
+      "sessions": 80,
+      "rss_kb": 2155848,
+      "ts": "23:35:27"
+    }
+  ],
+  "before_slope_kb_per_session": 6296.0,
+  "after_slope_kb_per_session": null,
+  "verdict": "样本不足，无法判读"
+}

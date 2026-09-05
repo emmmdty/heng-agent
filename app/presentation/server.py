@@ -156,6 +156,29 @@ def build_app() -> FastAPI:
             payload["retrieval"]["probe"] = await probe_retrieval(c.settings)
         return payload
 
+    @api.get("/debug/memory")
+    async def memory_diagnostics(snapshot: bool = False, compare: bool = False) -> dict:
+        """进程内存诊断（二十三期 soak 分析的观测端点）。
+
+        用法：PYTHONTRACEMALLOC=<深度> 启动进程后，
+            ?snapshot=1 取基线快照 → 打会话 → ?compare=1 看增长分配点。
+        仅限本机诊断，生产不要开 PYTHONTRACEMALLOC（自带 1-2% 开销）。
+        """
+        from app.presentation import memory_diagnostics as diag
+
+        if compare:
+            try:
+                return diag.diff_snapshot()
+            except ValueError as err:
+                raise HTTPException(status_code=409, detail=str(err)) from err
+        if snapshot:
+            return diag.take_snapshot()
+        return {
+            "tracemalloc_enabled": diag.tracemalloc_enabled(),
+            "hint": "GET /debug/memory?snapshot=1 取基线；?compare=1 看增长分配点。"
+                    "需以 PYTHONTRACEMALLOC=<深度> 启动进程。",
+        }
+
     # 故障注入端点**按开关注册**：默认关的进程里这条路径根本不存在。
     # 读的是进程启动时的环境变量，与组装根同一个判据（settings.fault_injection_enabled）。
     if load_settings().fault_injection_enabled:
@@ -240,16 +263,16 @@ def build_app() -> FastAPI:
         await state["connections"].serve(websocket)
 
     @api.get("/commerce/orders/{order_id}")
-    async def get_order(order_id: str) -> dict:
+    async def get_order(order_id: str, buyer_id: str) -> dict:
         try:
-            return await container().query_order.execute(order_id)
+            return await container().query_order.execute(order_id, buyer_id)
         except ValueError as err:
             raise HTTPException(status_code=404, detail=str(err)) from err
 
     @api.post("/commerce/orders/{order_id}/cancel")
     async def cancel_order_endpoint(order_id: str, body: CancelOrderRequest) -> dict:
         try:
-            return await container().cancel_order.execute(order_id, body.reason)
+            return await container().cancel_order.execute(order_id, body.reason, body.buyer_id)
         except ValueError as err:
             raise HTTPException(status_code=400, detail=str(err)) from err
 

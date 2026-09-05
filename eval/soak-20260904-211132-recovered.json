@@ -1,0 +1,127 @@
+{
+  "note": "恢复自 /tmp/opencode/soak.log（首跑落盘因 PROJECT_ROOT bug 失败，采样行完整）",
+  "sessions_done": 300,
+  "errors": [],
+  "lru_max": 200,
+  "rss_samples": [
+    {
+      "sessions": 10,
+      "rss_kb": 292928
+    },
+    {
+      "sessions": 20,
+      "rss_kb": 358464
+    },
+    {
+      "sessions": 30,
+      "rss_kb": 405568
+    },
+    {
+      "sessions": 40,
+      "rss_kb": 467520
+    },
+    {
+      "sessions": 50,
+      "rss_kb": 522048
+    },
+    {
+      "sessions": 60,
+      "rss_kb": 580672
+    },
+    {
+      "sessions": 70,
+      "rss_kb": 642368
+    },
+    {
+      "sessions": 80,
+      "rss_kb": 702784
+    },
+    {
+      "sessions": 90,
+      "rss_kb": 765504
+    },
+    {
+      "sessions": 100,
+      "rss_kb": 820160
+    },
+    {
+      "sessions": 110,
+      "rss_kb": 874560
+    },
+    {
+      "sessions": 120,
+      "rss_kb": 932160
+    },
+    {
+      "sessions": 130,
+      "rss_kb": 993216
+    },
+    {
+      "sessions": 140,
+      "rss_kb": 1048000
+    },
+    {
+      "sessions": 150,
+      "rss_kb": 1111488
+    },
+    {
+      "sessions": 160,
+      "rss_kb": 1165120
+    },
+    {
+      "sessions": 170,
+      "rss_kb": 1158848
+    },
+    {
+      "sessions": 180,
+      "rss_kb": 1211072
+    },
+    {
+      "sessions": 190,
+      "rss_kb": 1272256
+    },
+    {
+      "sessions": 200,
+      "rss_kb": 1312704
+    },
+    {
+      "sessions": 210,
+      "rss_kb": 1393344
+    },
+    {
+      "sessions": 220,
+      "rss_kb": 1399360
+    },
+    {
+      "sessions": 230,
+      "rss_kb": 1427264
+    },
+    {
+      "sessions": 240,
+      "rss_kb": 1483200
+    },
+    {
+      "sessions": 250,
+      "rss_kb": 1510720
+    },
+    {
+      "sessions": 260,
+      "rss_kb": 1540032
+    },
+    {
+      "sessions": 270,
+      "rss_kb": 1569728
+    },
+    {
+      "sessions": 280,
+      "rss_kb": 1599040
+    },
+    {
+      "sessions": 290,
+      "rss_kb": 1628352
+    }
+  ],
+  "before_slope_kb_per_session": 5531.6,
+  "after_slope_kb_per_session": 3332.3,
+  "verdict": "仍在增长"
+}

@@ -1,0 +1,147 @@
+{
+  "sessions_requested": 260,
+  "sessions_done": 260,
+  "errors": [],
+  "elapsed_seconds": 2498.1,
+  "lru_max": 200,
+  "rss_samples": [
+    {
+      "sessions": 0,
+      "rss_kb": 190380,
+      "ts": "22:30:20"
+    },
+    {
+      "sessions": 10,
+      "rss_kb": 272428,
+      "ts": "22:31:41"
+    },
+    {
+      "sessions": 20,
+      "rss_kb": 334124,
+      "ts": "22:33:16"
+    },
+    {
+      "sessions": 30,
+      "rss_kb": 392620,
+      "ts": "22:34:48"
+    },
+    {
+      "sessions": 40,
+      "rss_kb": 447404,
+      "ts": "22:36:19"
+    },
+    {
+      "sessions": 50,
+      "rss_kb": 505900,
+      "ts": "22:37:48"
+    },
+    {
+      "sessions": 60,
+      "rss_kb": 564396,
+      "ts": "22:39:29"
+    },
+    {
+      "sessions": 70,
+      "rss_kb": 622636,
+      "ts": "22:41:11"
+    },
+    {
+      "sessions": 80,
+      "rss_kb": 681644,
+      "ts": "22:43:02"
+    },
+    {
+      "sessions": 90,
+      "rss_kb": 751020,
+      "ts": "22:44:40"
+    },
+    {
+      "sessions": 100,
+      "rss_kb": 798124,
+      "ts": "22:46:33"
+    },
+    {
+      "sessions": 110,
+      "rss_kb": 855596,
+      "ts": "22:48:02"
+    },
+    {
+      "sessions": 120,
+      "rss_kb": 909484,
+      "ts": "22:49:27"
+    },
+    {
+      "sessions": 130,
+      "rss_kb": 971564,
+      "ts": "22:51:13"
+    },
+    {
+      "sessions": 140,
+      "rss_kb": 1025836,
+      "ts": "22:52:39"
+    },
+    {
+      "sessions": 150,
+      "rss_kb": 1084076,
+      "ts": "22:54:16"
+    },
+    {
+      "sessions": 160,
+      "rss_kb": 1142700,
+      "ts": "22:56:03"
+    },
+    {
+      "sessions": 170,
+      "rss_kb": 1200812,
+      "ts": "22:58:21"
+    },
+    {
+      "sessions": 180,
+      "rss_kb": 1258796,
+      "ts": "22:59:57"
+    },
+    {
+      "sessions": 190,
+      "rss_kb": 1317548,
+      "ts": "23:01:25"
+    },
+    {
+      "sessions": 200,
+      "rss_kb": 1374124,
+      "ts": "23:03:01"
+    },
+    {
+      "sessions": 210,
+      "rss_kb": 1393196,
+      "ts": "23:04:38"
+    },
+    {
+      "sessions": 220,
+      "rss_kb": 1418412,
+      "ts": "23:05:56"
+    },
+    {
+      "sessions": 230,
+      "rss_kb": 1447212,
+      "ts": "23:07:09"
+    },
+    {
+      "sessions": 240,
+      "rss_kb": 1477164,
+      "ts": "23:08:51"
+    },
+    {
+      "sessions": 250,
+      "rss_kb": 1505452,
+      "ts": "23:10:18"
+    },
+    {
+      "sessions": 260,
+      "rss_kb": 1528364,
+      "ts": "23:11:58"
+    }
+  ],
+  "before_slope_kb_per_session": 5825.0,
+  "after_slope_kb_per_session": 2664.2,
+  "verdict": "仍在增长"
+}

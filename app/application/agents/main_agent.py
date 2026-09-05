@@ -19,6 +19,8 @@ import logging
 from collections import OrderedDict
 from typing import Callable, Optional
 
+import asyncio
+
 from agentscope.agent import Agent, ReActConfig
 from agentscope.state import AgentState
 from agentscope.tool import (
@@ -195,6 +197,9 @@ class SessionRegistry:
         self._agents: "OrderedDict[str, Agent]" = OrderedDict()
         self._max_sessions = max(0, int(max_sessions))   # 0 = 不限
         self._on_evict = on_evict
+        # 淘汰时调度的 aclose task 强引用集合：asyncio 不持 task 强引用，
+        # 不挂住的话 task 可能在执行前被 GC（fire-and-forget 的经典坑）
+        self._closing_tasks: set = set()
 
     def cached_sessions(self) -> list[str]:
         """当前缓存了哪些会话（最久未用在前）。给运维与单测看。"""
@@ -214,15 +219,36 @@ class SessionRegistry:
         if not self._max_sessions:
             return
         while len(self._agents) > self._max_sessions:
-            evicted_id, _agent = self._agents.popitem(last=False)
+            evicted_id, agent = self._agents.popitem(last=False)
             logger.info("会话缓存已满，淘汰最久未用的会话：%s（当前 %d 个）",
                         evicted_id, len(self._agents))
+            # 淘汰当下显式关闭 model 链的 HTTP 客户端（主 + 备用）——
+            # openai SDK 的 __del__ 兜底是 fire-and-forget，执行时机不可控；
+            # 在那之前每会话 8 个 transport + 8 个 SSLContext 一直占内存
+            # （soak 首轮 RSS 拐点后不归零的成因，二十三期清单 7）
+            self._close_agent_model(agent)
             if self._on_evict is None:
                 continue
             try:
                 self._on_evict(evicted_id)
             except Exception as err:  # noqa: BLE001 —— 清理失败不能把这一轮对话搞挂
                 logger.warning("会话状态清理失败：%s（%s）", evicted_id, err)
+
+    def _close_agent_model(self, agent) -> None:
+        """调度被淘汰 Agent 的 model 客户端关闭。健壮性优先：
+        agent 无 model、无 aclose、无 running loop，都静默跳过——
+        关闭失败/缺席只影响内存回收速度，绝不能连累淘汰路径。"""
+        model = getattr(agent, "model", None)
+        aclose = getattr(model, "aclose", None)
+        if aclose is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # 同步上下文：没有 loop 可调度，交给 openai __del__ 兜底
+        task = loop.create_task(aclose())
+        self._closing_tasks.add(task)
+        task.add_done_callback(self._closing_tasks.discard)
 
     async def persist(self, shopping_session_id: str) -> None:
         """每轮对话结束后落盘 AgentState 快照；失败仅告警不影响主链路。"""
