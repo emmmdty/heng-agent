@@ -95,6 +95,12 @@ class Settings:
     # 进程内会话缓存上限（LRU）。0 = 不限（十七期之前的行为）。
     # 每个缓存项是一个 Agent + 整段对话上下文，不设限时内存随会话数单调增长。
     session_cache_max: int = 200
+    # ---- 二十五期任务 A：提示词 A/B 分流 ----
+    # 本进程跑的是哪个提示词变体。空 = 基线（默认提示词，heng.yml 原文）。
+    # A/B 两臂各起一个实例：基线臂不设，候选臂设 PROMPT_VARIANT=<变体名>，
+    # /health 原样上报，评测脚本抄进报告——变体名是归因主键，
+    # 指纹（对 heng.yml 内容哈希）是内容校验码，两者缺一不可。
+    prompt_variant: str = ""
     # ---- 二十期：向量库落盘位置与证据落盘位置解耦 ----
     # Qdrant 本地嵌入模式是单进程文件锁，起第二个实例就得换一份向量库存储。
     # 此前唯一的办法是整个 DATA_DIR 换掉——而**流水也跟着换走了**：
@@ -191,4 +197,5 @@ def load_settings() -> Settings:
         fault_injection_enabled=os.getenv("FAULT_INJECTION_ENABLED", "0")
         not in ("0", "false", "False"),
         session_cache_max=int(os.getenv("SESSION_CACHE_MAX", "200")),
+        prompt_variant=os.getenv("PROMPT_VARIANT", "").strip(),
     )

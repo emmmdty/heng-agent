@@ -113,6 +113,9 @@ class Container:
     db_engine: Any
     # 跑测身份：让 /health 能自报"这个读数是哪套配置跑出来的"
     prompt_fingerprint: str = ""
+    # 二十五期任务 A：提示词变体名（空 = 基线）。A/B 两臂各自起实例，
+    # 变体名由 PROMPT_VARIANT 环境变量进来，是评测读数归因的主键。
+    prompt_variant: str = ""
     reranker_enabled: bool = False
     lexical_gate: float = 0.0
     # 评测态故障注入状态。默认是一个 enabled=False 的空注册表，
@@ -340,6 +343,7 @@ async def build_container() -> Container:
         knowledge_base=knowledge_base,
         db_engine=db_engine,
         prompt_fingerprint=_prompt_fingerprint(),
+        prompt_variant=settings.prompt_variant,
         reranker_enabled=reranker is not None,
         lexical_gate=catalog_search.lexical_gate,
         faults=faults,

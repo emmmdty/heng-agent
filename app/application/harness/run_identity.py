@@ -88,6 +88,7 @@ def describe_run(health: dict, judge_model: str = "") -> str:
         f"被测模型 {_text(health.get('model'))}"
         f"｜评审模型 {_text(judge_model)}"
         f"｜提示词 {_text(health.get('prompt_fingerprint'))}"
+        f"{_describe_variant(health.get('prompt_variant'))}"
         f"｜精排 {_probed_switch(retrieval.get('reranker'), _probe_of(retrieval, 'reranker'))}"
         f"{_dead_vector_path(retrieval)}"
         f"｜字面索引 {_switch(retrieval.get('lexical_index'))}"
@@ -96,6 +97,18 @@ def describe_run(health: dict, judge_model: str = "") -> str:
         f"｜代码 {_describe_code(health.get('code'))}"
         f"{_describe_faults(health.get('fault_injection'))}"
     )
+
+
+def _describe_variant(variant: Any) -> str:
+    """提示词变体只在真的设了时才占一格（同 _describe_faults 的先例）。
+
+    空 = 基线，这本身是真话而不是缺信息——渲染成"未知"反而误导。
+    但 JSON 载荷里字段恒在（空也报）：『字段缺席 = 旧代码』与
+    『空字符串 = 基线』必须可区分。
+    """
+    if not isinstance(variant, str) or not variant.strip():
+        return ""
+    return f"｜提示词变体 {variant.strip()}"
 
 
 def _describe_faults(faults: Any) -> str:

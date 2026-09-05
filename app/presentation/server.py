@@ -131,6 +131,9 @@ def build_app() -> FastAPI:
             "queue_depth": await c.task_queue.depth() if c.task_queue is not None else 0,
             # 跑测身份：评测脚本原样抄进报告，让"分数变了"能归因到配置而不是靠回忆
             "prompt_fingerprint": c.prompt_fingerprint,
+            # 提示词变体（二十五期任务 A）：空 = 基线。**空也要报**——
+            # "字段缺席"说明服务是旧代码，与"空字符串 = 基线"必须可区分。
+            "prompt_variant": c.prompt_variant,
             # 代码新鲜度：上面那些字段答不了"这进程跑的是不是我刚改的代码"。
             # 九期踩过——进程 16:43 起、修复 16:49 落地、没重启，两条定向回归
             # 全打在旧代码上，而这份 /health 报的配置一字不差。

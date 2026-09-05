@@ -39,12 +39,16 @@ cases:
 # 当前基线 6.7%（九期实测），收掉免税额度阈值那条尾巴后预计更低，
 # 届时再往下收紧，不要在拿到新读数之前先收。
 PROVENANCE_MAX_RATIO ?= 0.08
+# 吃跑测产物的门禁默认看最近一轮（--report latest）。补跑/定向切片会把 latest
+# 顶成小样本，那时用 REPORT=<报告路径> 钉死要判的那一轮——引用基线一律钉文件名，
+# 这是同一纪律的门禁侧入口（不改变默认行为，不加任何"没数据当通过"的旁路）。
+REPORT ?= latest
 
 # --report latest 把范围收敛到最近一轮：data/conversations/ 是累积目录，
 # 扫全量会把历史流水的无出处金额一直算进来，每跑一轮读数就往上抬一点，
 # 阈值只能跟着调，门禁很快就废了。
 provenance:
-	uv run python scripts/eval/audit_number_provenance.py --report latest --max-ratio $(PROVENANCE_MAX_RATIO)
+	uv run python scripts/eval/audit_number_provenance.py --report $(REPORT) --max-ratio $(PROVENANCE_MAX_RATIO)
 
 # 算式自洽：回复里显式写出的 `A × B% = C` 得算得通。
 #
@@ -53,7 +57,7 @@ provenance:
 # 而 886.34 × 7.5% = 6.48 是能指着原文说"这一行算错了"的事实错误，
 # 没有"这轮抖了一下"的解释空间，也就没有摊薄它的口径（踩坑 45 同一面）。
 arithmetic:
-	uv run python scripts/eval/audit_arithmetic.py --report latest --gate
+	uv run python scripts/eval/audit_arithmetic.py --report $(REPORT) --gate
 
 # 收货字段出处：回复里的地址 / 电话 / 邮编，买家没给过、工具没返回过就不许出现。
 #
@@ -63,7 +67,7 @@ arithmetic:
 # Agent 写的是"您之前的记录是上海市浦东新区世纪大道100号"——**一个金额都没有**，
 # 前两条扫描完全无感，所以必须是第三条独立判据。
 contact:
-	uv run python scripts/eval/audit_contact_provenance.py --report latest --gate
+	uv run python scripts/eval/audit_contact_provenance.py --report $(REPORT) --gate
 
 # 组合总价错加（basket_misadd）：单品到手价相加被当作组合总价，即运费重复计。
 #
@@ -73,7 +77,7 @@ contact:
 # 没有报价时判据只作线索、不判罪；所以"0 违规"分两种，
 # 判词会写明是"判过了、全对"还是"压根没东西可判"（踩坑 33）。
 basket:
-	uv run python scripts/eval/audit_basket_sum.py --report latest --gate
+	uv run python scripts/eval/audit_basket_sum.py --report $(REPORT) --gate
 
 # 知识库出处：声称"来自知识库 / 品类洞察"的内容，本会话必须真有过成功返回。
 #
@@ -82,7 +86,7 @@ basket:
 # 判据刻意窄：只认"知识库 / 品类洞察"字样的归因构型，能力提议、缺失观察
 # （"知识库里没有 X"）与诚实降级（"知识库暂时不可用"）都不算声明。
 knowledge:
-	uv run python scripts/eval/audit_knowledge_provenance.py --report latest --gate
+	uv run python scripts/eval/audit_knowledge_provenance.py --report $(REPORT) --gate
 
 # —— 以下带真实 LLM 成本，不进 check ——
 
