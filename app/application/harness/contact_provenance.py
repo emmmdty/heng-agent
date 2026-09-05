@@ -45,7 +45,11 @@
        按全串比对会把它判成编造。
     6. 报错文本不算出处：`[error] 地址无效：...` 里的地址恰恰是**不该**
        被当成合法出处的那个（与 `order_provenance` 同一条纪律）。
-"""
+    7. 纯字段名枚举不是断言（二十五期主线实测的误报）：索要地址时列出
+       "省/州、城市、街道"这类**要问什么**的清单，值里没有任何具体内容，
+       与"请提供"同族；混入具体地名或数字的仍按断言判（见
+       `_is_field_name_enumeration`）。
+ """
 from __future__ import annotations
 
 import json
@@ -88,6 +92,22 @@ _PLACEHOLDER = re.compile(
 # markdown 结构字符：值里出现任何一个，说明标签与值被排版结构隔开（或值本身就是
 # 结构符号，如表格分隔线 ---），单行扫描取不到可信的值——宁可漏报，跳过。
 _MARKDOWN_NOISE = re.compile(r"[*|>#`]")
+
+# 纯字段名枚举（二十五期主线实测的误报，report-20260905-142017）：
+# 索要地址时把"要问哪些字段"列成清单——"**详细地址**：省/州、城市、街道地址、邮编"。
+# 标签切分把清单当成了值。值里全是字段名词汇、没有任何具体内容的，是在
+# 问买家要模板，不是断言——同"请提供"一族。判据罚的是"断言买家没给过的值"，
+# 不是罚"列出要问什么"；混入任何具体内容（如"上海市"）的仍按断言判。
+_FIELD_NAME_VOCAB = re.compile(
+    r"国家|省|州|城市|城区|街道|地址|邮编|邮政编码|姓名|收货人|收件人|联系人|电话|手机|号码|详细|所在",
+)
+_ENUM_RESIDUE = re.compile(r"[^一-龥A-Za-z0-9]")
+
+
+def _is_field_name_enumeration(value: str) -> bool:
+    """值是否只是字段名的枚举（无任何具体内容）。"""
+    residue = _ENUM_RESIDUE.sub("", _FIELD_NAME_VOCAB.sub("", value))
+    return not residue
 
 
 def _has_layout_noise(value: str) -> bool:
@@ -147,7 +167,8 @@ def _labeled_field_claims(text: str) -> list[ContactClaim]:
             if separator is None:
                 continue  # 标签后面没紧跟分隔符：不是"标签：值"的断言形态
             value = raw[separator.end():].strip().strip("|*#>").strip()
-            if not value or _has_layout_noise(value) or _PLACEHOLDER.search(value):
+            if (not value or _has_layout_noise(value) or _PLACEHOLDER.search(value)
+                    or _is_field_name_enumeration(value)):
                 continue
             if _value_matches_form(kind, value):
                 continue  # 形态完整：三条模式已按出处判定，不重复记

@@ -59,6 +59,30 @@ class TestExtraction:
             "还需要您提供收货地址、收件人和联系电话，我才能下单。",
         ) == []
 
+    def test_field_name_enumeration_in_request_is_not_a_claim(self):
+        """二十五期主线实测（report-20260905-142017）：索要的字段名清单被
+        标签切分成了伪断言——"详细地址：省/州、城市、街道"里没有一个具体值，
+        全是让买家填什么的模板词。reply 提到"订单确认卡"四字，卡语境生效，
+        标签扫描把清单当成了值。判据的立法本意是罚"断言买家没给过的值"，
+        不是罚"列出要问哪些字段"——纯字段名枚举不是断言。"""
+        reply = (
+            "为了为您下单，我需要您提供收货地址信息：\n"
+            "1. **收货国家**（例如：CN、US、EU、JP、SG）\n"
+            "2. **详细地址**：省/州、城市、街道地址、邮编\n"
+            "3. **收货人姓名**\n"
+            "4. **联系电话**\n"
+            "请提供这些信息，我会为您计算到手价并生成订单确认卡。"
+        )
+        assert extract_contact_claims(reply) == []
+
+    def test_enumeration_mixed_with_concrete_value_is_still_a_claim(self):
+        """修法不许开洞：字段名里混着具体地名的仍是断言（往"上海市"一填
+        就是编造的形状），只有纯标签枚举才豁免。"""
+        reply = "### 确认卡\n地址：省/州、城市、上海市浦东新区世纪大道100号"
+        sources = collect_contact_sources()
+        report = check_contact(reply, sources)
+        assert not report.clean, "枚举里混入具体地址的必须仍然被告警"
+
     def test_city_alone_is_not_an_address(self):
         """碎片式地名属于已知漏报：放宽到城市名会把"上海仓发货"扫进来。"""
         assert extract_contact_claims("这款从上海发货，三天到") == []
