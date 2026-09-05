@@ -480,12 +480,23 @@ async def _guard_semantic_cache(allow: bool) -> dict:
     return health
 
 
-def select_cases(cases: list[dict], only: str | None = None, tag: str | None = None) -> list[dict]:
-    """按 --only / --tag 挑用例。
+def select_cases(
+    cases: list[dict],
+    only: str | None = None,
+    tag: str | None = None,
+    exclude_tag: str | None = None,
+) -> list[dict]:
+    """按 --only / --tag / --exclude-tag 挑用例。
 
     分层的目的是让扩容后的用例集还跑得起：日常 smoke（8-10 条，10 分钟内），
     发版前 full（全部）。`full` 不需要逐条标注——所有用例隐含属于它，
     否则新增用例漏标 tag 就会永远不被跑到，而"静默不跑"和真绿外观完全一样。
+
+    `--exclude-tag` 是主线基线的复现入口：二十三期加进 11 条红队用例后，
+    用例集是 55 条，而 full 是隐含标签——**没有任何选择器选得出那 44 条主线**，
+    于是"full 44 条 44/44、均分 0.993"这条被二十五期当护栏门槛的基线不可复现。
+    做成排除式而不是给 44 条各标一个 `mainline`，理由同上一段：
+    逐条标注一旦漏标，那条用例会静默掉出基线集，外观与真绿一致。
 
     选空了一律报错退出：跑 0 条会产出一份"全过"的报告，
     它和真的全过在报告里长得一模一样。
@@ -496,13 +507,18 @@ def select_cases(cases: list[dict], only: str | None = None, tag: str | None = N
         # 分几次跑意味着几份报告、几次 /health 前置检查，也没法一眼看到对比
         wanted = [item.strip() for item in only.split(",") if item.strip()]
         selected = [c for c in selected if c["id"] in wanted]
-    elif tag is not None and tag != _TAG_ALL:
-        selected = [c for c in selected if tag in (c.get("tags") or [])]
+    else:
+        if tag is not None and tag != _TAG_ALL:
+            selected = [c for c in selected if tag in (c.get("tags") or [])]
+        if exclude_tag is not None:
+            unwanted = {item.strip() for item in exclude_tag.split(",") if item.strip()}
+            # 没标 tags 的用例属于主线，不属于被排除的那一层——排除式的关键
+            selected = [c for c in selected if not (unwanted & set(c.get("tags") or []))]
 
     if not selected:
         known = sorted({t for c in cases for t in (c.get("tags") or [])} | {_TAG_ALL})
         raise SystemExit(
-            f"没有用例匹配（--only={only} --tag={tag}）。\n"
+            f"没有用例匹配（--only={only} --tag={tag} --exclude-tag={exclude_tag}）。\n"
             f"  可用标签：{'、'.join(known)}\n"
             f"  可用用例：{'、'.join(c['id'] for c in cases)}",
         )
@@ -585,6 +601,11 @@ async def main() -> None:
         help=f"只跑带该标签的用例（smoke 为日常档；{_TAG_ALL} 或不传为全部）",
     )
     parser.add_argument(
+        "--exclude-tag",
+        default=None,
+        help="剔除带该标签的用例（逗号分隔）。主线基线 = --exclude-tag redteam",
+    )
+    parser.add_argument(
         "--allow-semantic-cache",
         action="store_true",
         help="允许在语义缓存开启的环境下跑（不推荐，评的会是缓存而不是 Agent）",
@@ -620,7 +641,7 @@ async def main() -> None:
 
     with open(args.cases, encoding="utf-8") as f:
         cases = yaml.safe_load(f)["cases"]
-    cases = select_cases(cases, only=args.only, tag=args.tag)
+    cases = select_cases(cases, only=args.only, tag=args.tag, exclude_tag=args.exclude_tag)
     guard_fault_support(cases, health)
 
     previous: list[dict] = []

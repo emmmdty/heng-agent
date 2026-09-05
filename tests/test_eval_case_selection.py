@@ -104,3 +104,75 @@ class TestOnlyAcceptsSeveralIds:
         from scripts.eval_regression import select_cases
 
         assert [c["id"] for c in select_cases(self._cases(), only="a,zzz-nope")] == ["a"]
+
+
+class TestExcludeTag:
+    """`--exclude-tag`：主线基线（44 条）要能一条命令复现出来。
+
+    二十三期加进 11 条红队用例之后，用例集变成 55 条，而 `full` 是隐含标签
+    （所有用例都属于它），于是**没有任何一个选择器能选出那 44 条主线**——
+    交接文档与贡献证明里的 "full 44 条 44/44 PASS / 均分 0.993" 这条基线
+    从此不可复现，而二十五期 A/B 的护栏正是拿它当门槛。
+
+    修法刻意是"排除式"而不是给 44 条各标一个 `mainline`：
+    逐条标注一旦漏标，那条用例就会静默掉出基线集，
+    与本文件开头那条"漏标 tag 永远不被跑到"是同一类故障。
+    """
+
+    CASES = [
+        {"id": "a", "tags": ["smoke"]},
+        {"id": "b", "tags": ["smoke", "redteam"]},
+        {"id": "c"},                       # 没标 tags
+        {"id": "d", "tags": ["redteam"]},
+    ]
+
+    def test_exclude_removes_that_layer(self):
+        assert [c["id"] for c in select_cases(self.CASES, exclude_tag="redteam")] == ["a", "c"]
+
+    def test_untagged_cases_survive_exclusion(self):
+        """漏标 tags 的用例不该被排除吞掉——它属于主线，不属于被排除的那层。"""
+        picked = select_cases(self.CASES, exclude_tag="redteam")
+        assert "c" in [c["id"] for c in picked]
+
+    def test_composes_with_tag(self):
+        assert [c["id"] for c in select_cases(self.CASES, tag="smoke", exclude_tag="redteam")] == ["a"]
+
+    def test_only_wins_over_exclude(self):
+        """--only 是定向验证链路用的，和压过 --tag 同一条理由。"""
+        assert [c["id"] for c in select_cases(self.CASES, only="d", exclude_tag="redteam")] == ["d"]
+
+    def test_comma_separated_tags(self):
+        assert [c["id"] for c in select_cases(self.CASES, exclude_tag="redteam, smoke")] == ["c"]
+
+    def test_excluding_everything_fails_loudly(self):
+        """排空了必须报错：跑 0 条会产出一份和真绿一模一样的"全过"报告。"""
+        with pytest.raises(SystemExit, match="没有用例"):
+            select_cases([{"id": "a", "tags": ["redteam"]}], exclude_tag="redteam")
+
+    def test_error_message_mentions_the_exclusion(self):
+        """报错要说得出是谁把用例排空的，否则只能去猜 --tag 打错了没。"""
+        with pytest.raises(SystemExit, match="exclude-tag"):
+            select_cases([{"id": "a", "tags": ["redteam"]}], exclude_tag="redteam")
+
+
+class TestMainlineBaselineIsReproducible:
+    """对真实用例集断言不变式：主线 = 全部 − 红队，两边不重不漏。
+
+    刻意**不**断言"恰好 44 条"：主线加用例是正常演进，
+    而"这一轮跑的是不是同一份考卷"由 variance 的用例集身份
+    （case id 集合的 sha1）保证，不需要在这里钉死一个会过期的数字。
+    """
+
+    def _real_cases(self):
+        import yaml
+
+        from scripts.eval_regression import PROJECT_ROOT
+
+        return yaml.safe_load((PROJECT_ROOT / "eval" / "cases.yaml").read_text(encoding="utf-8"))["cases"]
+
+    def test_mainline_and_redteam_partition_the_suite(self):
+        cases = self._real_cases()
+        mainline = {c["id"] for c in select_cases(cases, exclude_tag="redteam")}
+        redteam = {c["id"] for c in select_cases(cases, tag="redteam")}
+        assert not (mainline & redteam)
+        assert mainline | redteam == {c["id"] for c in cases}
