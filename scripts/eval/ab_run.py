@@ -1084,7 +1084,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cases", default=str(PROJECT_ROOT / "eval" / "cases.yaml"))
     parser.add_argument("--only", default=None, help="只跑指定 case id（逗号分隔）")
     parser.add_argument("--tag", default=None, help="只跑带该标签的用例（先导档 = --tag smoke）")
-    parser.add_argument("--exclude-tag", default=None, help="剔除带该标签的用例（主线 = --exclude-tag redteam）")
+    parser.add_argument("--exclude-tag", default=None, help="剔除带该标签的用例（主线 = --exclude-tag redteam,mem）")
     parser.add_argument("--k", type=int, default=2, help="每臂每用例采样次数（默认 2）")
     parser.add_argument("--pairing", default="diagonal", choices=("diagonal", "cross"),
                         help="配对方式（diagonal 对数 k/用例；cross 翻倍到 k²，被测成本不变）")

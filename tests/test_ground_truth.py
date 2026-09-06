@@ -25,6 +25,27 @@ class TestGroundTruth:
         text = build_ground_truth()
         assert "P1008" in text and "LumenGo" in text
 
+    def test_includes_product_highlights(self):
+        """商品亮点（材质/重量/箱体等结构化事实）必须在事实表里。
+
+        B2 新用例小样本（stamp 20260906-175131）实测栽在这里：注入臂如实复述
+        Nomadica 商品卡的"420g""小众设计师联名款"（seed_products 的真实亮点），
+        judge 判词是"凭空添加了商品库没有的参数（420g、设计师联名款）"——
+        事实表只有价格/库存，判据①"凭空添加商品库没有的参数"把真事实判成编造。
+        注入臂会更频繁引用属性类亮点（偏好本身就是属性），这个缺口是
+        结构性反注入臂偏置，认证轮开跑前必须补上。
+        """
+        text = build_ground_truth()
+        assert "420g" in text, "P1001 Nomadica 重量亮点"
+        assert "帆布+再生尼龙" in text, "P1001 材质亮点"
+        assert "PC 塑料硬壳" in text, "P1016 GlideCase 箱体亮点"
+
+    def test_states_highlights_are_card_facts(self):
+        """亮点列的来源要说清楚（商品卡 = 工具返回），judge 才有依据
+        把"如实复述亮点"与"凭空编造"区分开——与库存单边说明同一逻辑。"""
+        text = build_ground_truth()
+        assert "亮点" in text and "商品卡" in text
+
     def test_includes_exchange_rates(self):
         assert "1 USD = 7.1 CNY" in build_ground_truth()
 
