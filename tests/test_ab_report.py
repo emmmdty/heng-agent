@@ -176,6 +176,26 @@ class TestPositiveControl:
         text = self._with_weaker("A", win_rate=0.22, significant=True)
         assert "负向显著" in text and "工具有区分度" in text and "臂 A" in text
 
+    def test_statistical_significance_not_polluted_by_judge_valid_flag(self):
+        """回归（M3 对照轮实测）：90% 互换门槛把 judge_valid=False 并进 significant，
+        p=0.0115、CI 不含 0.5 的真实负向显著被误报成'区分度缺陷'。对照段落的
+        判定必须看统计量本身（p<0.05 + CI 不含 0.5），不吃 judge_valid 旗标。"""
+        arm_config = {
+            "A": {"fingerprint": "2decf14b", "variant": "control-weaker-confirm", "model": "mimo-v2.5"},
+            "B": {"fingerprint": "a0915fac", "variant": "", "model": "mimo-v2.5"},
+        }
+        text = render_ab_report(_payload(
+            positive_control=True,
+            label="阳性对照",
+            arm_config=arm_config,
+            significance={"judge_valid": False, "enough_pairs": True, "p_value": 0.0115,
+                          "ci_excludes_half": True, "significant": False,
+                          "reasons": ["位置互换一致率 0.794 < 0.9，该轮 judge 读数作废重跑"]},
+            win_rate={"n": 54, "wins": 12, "losses": 29, "ties": 13, "n_error": 0,
+                      "n_decisive": 41, "win_rate": 12 / 54, "win_rate_excl_ties": 12 / 41},
+        ))
+        assert "负向显著" in text and "工具有区分度" in text
+
     def test_not_significant_is_tool_deficiency(self):
         text = self._with_weaker("B", win_rate=0.55, significant=False)
         assert "区分度" in text

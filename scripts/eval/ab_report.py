@@ -155,17 +155,24 @@ def render_ab_report(payload: dict) -> str:
             )
         else:
             win_rate = win.get("win_rate") or 0
-            # win_rate 是 A 臂视角；已知更差臂被判更差 = 负向显著（方向随 weaker 换位）
+            # win_rate 是 A 臂视角；已知更差臂被判更差 = 负向显著（方向随 weaker 换位）。
+            # 判定看统计量本身（p<0.05 + CI 不含 0.5），**不吃 significant 旗标**——
+            # 它被 90% 互换门槛的 judge_valid 污染（M3 对照轮 p=0.0115、CI 不含 0.5
+            # 的真实负向显著被误报成"区分度缺陷"的实测教训）。
+            statistically_negative = (
+                (sig.get("p_value") is not None and sig["p_value"] < 0.05)
+                and bool(sig.get("ci_excludes_half"))
+            )
             weaker_won = (win_rate > 0.5) if weaker == "A" else (win_rate < 0.5)
             lines.append(
                 f"- 已知更差臂 = **臂 {weaker}**（变体 {(arm_config.get(weaker) or {}).get('variant')}），"
                 "预期被判负向显著。"
             )
-            if sig["significant"] and not weaker_won:
+            if statistically_negative and not weaker_won:
                 lines.append(
                     f"- ✅ 负向显著：已知更差的臂 {weaker} 被判显著更差——工具有区分度，有效性自证通过。"
                 )
-            elif sig["significant"]:
+            elif statistically_negative:
                 lines.append(
                     f"- ❌ 方向反了：已知更差的臂 {weaker} 被判更优——读数有效性存疑，先查工具再谈胜负。"
                 )
