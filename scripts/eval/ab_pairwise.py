@@ -31,6 +31,10 @@ _VERDICT_RE = re.compile(
 )
 # 值后面紧跟着数字（全半角都算）→ 这次匹配不是完整值，视为脏
 _AFTER_VALUE_RE = re.compile(r"[0-9０-９]")
+# 值后面紧跟着竖线（全半角都算）→ judge 原样回显了提示词的格式枚举行
+# 『裁决: 1|2|平局』。截断防护拦不住它（| 非数字），旧代码会把 "1" 当成
+# 真实裁决 → 假决定性读数。回显是格式不是裁决，报错留名。
+_ECHO_SEPARATOR_RE = re.compile(r"[|｜]")
 _RATIONALE_RE = re.compile(r"(?:理由|rationale|reason)\s*[:：]\s*(.+)", re.IGNORECASE | re.DOTALL)
 
 # 理由段内的裁决行：只认**行首**标签。行中出现的（"我本来想写 裁决: 2，
@@ -111,7 +115,8 @@ def parse_verdict(raw: str | None) -> dict:
 
     容错：大小写、全半角冒号与数字、"回复1"前缀、值后跟自由文本、
     裁决行不在末尾、同值多行。
-    脏输出一律 VerdictParseError：空输出 / 无标签 / 值非法 / 值互相矛盾 /
+    脏输出一律 VerdictParseError：空输出 / 无标签 / 值非法 / 格式回显
+    （值后紧随枚举分隔符，如原样复述"裁决: 1|2|平局"）/ 值互相矛盾 /
     理由缺失。错误信息带原文，方便直接进 error 行留名。
     """
     if raw is None or not raw.strip():
@@ -135,15 +140,25 @@ def parse_verdict(raw: str | None) -> dict:
     def _normalize(token: str) -> str:
         return "tie" if token in _TIE_TOKENS else token.translate(str.maketrans("１２", "12"))
 
-    matches = []
-    for match in _VERDICT_RE.finditer(masked):
+    def _validated_token(match: re.Match, text: str) -> str:
+        """取匹配的裁决值并做值尾检查：紧跟数字是截断脏，紧跟竖线是格式回显。"""
         token = match.group(1)
-        # "12" 这种连续数字不能被截成 "1"——匹配后紧跟数字即为脏
-        tail = masked[match.end():match.end() + 1]
+        tail = text[match.end():match.end() + 1]
         if tail and _AFTER_VALUE_RE.match(tail):
             raise VerdictParseError(f"裁决值不完整或非法：{token}…（judge 原始输出：{raw!r}）")
-        matches.append(_normalize(token))
-    matches.extend(_normalize(m.group(1)) for m in _VERDICT_LINE_RE.finditer(rationale_span))
+        if tail and _ECHO_SEPARATOR_RE.match(tail):
+            raise VerdictParseError(
+                f"判词是格式回显不是裁决——值后紧随枚举分隔符（{token}{tail}…），"
+                f"疑似原样复述提示词的『裁决: 1|2|平局』格式行：{raw[:120]!r}"
+            )
+        return _normalize(token)
+
+    matches = []
+    for match in _VERDICT_RE.finditer(masked):
+        matches.append(_validated_token(match, masked))
+    matches.extend(
+        _validated_token(m, rationale_span) for m in _VERDICT_LINE_RE.finditer(rationale_span)
+    )
 
     if not matches:
         raise VerdictParseError(f"找不到裁决行（需要『裁决: 1|2|平局』）：{raw[:120]!r}")

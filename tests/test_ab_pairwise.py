@@ -117,6 +117,44 @@ class TestParseVerdict:
         with pytest.raises(VerdictParseError):
             parse_verdict("裁决: 12\n理由: x")
 
+    def test_format_echo_line_raises(self):
+        """judge 原样回显提示词格式行『裁决: 1|2|平局』不是裁决。
+
+        截断防护拦不住它（值后的 | 非数字），旧代码会解析成 winner=1 的
+        假决定性读数。护栏应拦：VerdictParseError 留名。
+        """
+        with pytest.raises(VerdictParseError) as err:
+            parse_verdict("裁决: 1|2|平局\n理由: <一句话，说明裁决依据>")
+        assert "格式回显" in str(err.value)
+        assert "1|2|平局" in str(err.value)
+
+    def test_format_echo_fullwidth_pipe_raises(self):
+        """全半角等价是本解析器的既有约定（数字/冒号都双宽），竖线同理。"""
+        with pytest.raises(VerdictParseError):
+            parse_verdict("裁决: １｜２｜平局\n理由: <一句话，说明裁决依据>")
+
+    def test_format_echo_at_line_start_in_rationale_span_raises(self):
+        """理由在前、格式行回显在后：行首裁决行同样不得当投票计值。"""
+        with pytest.raises(VerdictParseError):
+            parse_verdict("理由: 回复1 的数字可靠\n裁决: 1|2|平局")
+
+    def test_pipe_after_value_is_echo_not_verdict(self):
+        """值后紧随竖线即回显，无论后面跟什么——'1|2|平局' 的 '1' 不是裁决。"""
+        with pytest.raises(VerdictParseError):
+            parse_verdict("裁决: 1|2\n理由: x")
+
+    def test_legit_forms_around_echo_guard_still_parse(self):
+        """护栏不得误伤既有合法/既有脏形态：值后自由文本、两位数脏、平局。"""
+        assert parse_verdict("裁决: 1 更好\n理由: ok")["winner"] == "1"
+        with pytest.raises(VerdictParseError):
+            parse_verdict("裁决: 12\n理由: x")
+        assert parse_verdict("裁决: 平局\n理由: 相当")["winner"] == "tie"
+
+    def test_digit_tail_guard_covers_rationale_span_path_too(self):
+        """值尾检查在理由段行首路径同样生效：'裁决: 12' 不得截成 1。"""
+        with pytest.raises(VerdictParseError):
+            parse_verdict("理由: x\n裁决: 12")
+
     def test_missing_rationale_raises(self):
         for raw in ("裁决: 1", "裁决: 1\n理由:", "裁决: 1\n理由:   "):
             with pytest.raises(VerdictParseError):
