@@ -191,6 +191,8 @@ class TestCompositionWiring:
 
     @staticmethod
     async def _toolkit_names_and_fingerprint(monkeypatch, flag: str, store_dir: str):
+        # CI runner 没有 /tmp/opencode——qdrant 本地存储目录先建出来
+        Path(store_dir).mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv("VECTOR_STORE_DIR", store_dir)
         monkeypatch.setenv("SKILL_LOADING_ENABLED", flag)
         from app.composition import build_container
