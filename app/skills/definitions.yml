@@ -1,0 +1,63 @@
+# Skill 定义（#14 任务 C，C2）——按任务阶段渐进注入的打包单元。
+#
+# 设计依据：二十七期 C1 构成分解（docs/二十七期skill化设计笔记.md）
+#   - 固定段真值 7,094 token = P50 的 42%；工具 schema 14,578 chars 里
+#     57% 是零调用死重（agentscope 内置 Task* 四件套，全史 0 次调用）；
+#   - 工具子集按调用证据分三档（常驻检索 / 交易 / 记忆），Task* 不进任何 skill；
+#   - 阶段路由必须保守（宁可多带，C4 的 PASS 不回退是一票否决）。
+#
+# 纪律：片段内容必须与 heng.yml 已冻结的工作约定同义——这里是**搬运与分档**，
+# 不是发明新标准。C3 接线前本文件不起作用（不改变 prompt_fingerprint）。
+
+skills:
+  - id: common-boundaries
+    stages: [common]
+    # product_search_tool 是常驻档（C1：R8 109 次调用，几乎每轮都用；
+    # heng.yml 的交易流也要求 optimize_basket 前先检索候选）——挂 common
+    # 让它在任何阶段都不可被渐进加载过滤掉（保守铁律：宁可多带）。
+    tools: [product_search_tool]
+    prompt_fragments:
+      - "本系统不涉及支付与物流，不要向买家承诺退款路径、发货时效等不存在的能力。"
+      - "工具返回 [error]（包括超时、熔断、不可用）时如实告知买家哪一环节没拿到数据，给出可行的下一步，绝不编造商品、价格或订单信息填补空白。"
+      - "不得编造工具故障：只有工具真的返回了 [error] 才能说工具不可用，没调工具不得声称工具有限制。"
+    criteria:
+      - "回复不承诺系统不存在的能力（支付/物流/退款/默认地址）"
+      - "工具失败时如实留痕并给下一步，不用编造内容填补"
+
+  - id: search-basics
+    stages: [search]
+    tools: [product_search_tool, category_insight_tool, task_dispatch]
+    prompt_fragments:
+      - "买家有预算硬约束时必传 price_max_major，由检索链路结构化过滤；预算/收货国等约束只对提出它的那轮诉求生效，买家换品类重新检索时不要自动沿用上一轮的上限（除非买家明说）。"
+      - "category_insight_tool 只提供判断口径，不返回可买商品：只要买家是在找/推荐/买商品，查完它必须紧接着调 product_search_tool 给出具体商品（含 product_id 与价格）。"
+      - "检索返回的 filtered_out 里若已有买家要的品类商品，必须如实说清库里有但被哪条约束挡住，并给出放宽建议；绝不能把它说成没有这个商品。"
+      - "不要自行发明商品定义；以检索回来的候选为准，候选与买家意图大体相符就推荐，并如实说明差异让买家自己定夺。"
+    criteria:
+      - "价格/库存等数字事实全部来自工具返回"
+      - "知识库类工具之后必须落到具体商品（若买家在找商品）"
+      - "被硬约束挡掉的候选如实说明，不报成没有"
+
+  - id: trade-basics
+    stages: [trade]
+    tools: [quote_basket_tool, optimize_basket_tool, create_order_tool, cancel_order_tool, query_order_tool]
+    prompt_fragments:
+      - "涉及订单写操作（创建/取消）必须先向用户输出确认卡（商品、数量、金额、收货地址），得到明确确认后再执行；收货信息只能来自买家本轮或本会话明确提供过的内容，系统不存在默认地址。"
+      - "买家问几个商品一起多少钱时必须调 quote_basket_tool，绝不允许把单品到手价自己相加——运费按一次履约计，免税额度按整批小计判定。"
+      - "买家给了预算又提多个需求时必须调 optimize_basket_tool：还剩多少、再加多少能配上、一起买省多少都由它返回，自行计算就是没有出处的数字。"
+      - "关税的计税基数是超出免税额度的那部分（taxable_base_major），不是整单金额。"
+    criteria:
+      - "订单写操作前有完整确认卡，且写操作在买家确认之后"
+      - "组合价/预算差额来自工具返回，不自行相加"
+      - "计税基数正确（超出免税额度的部分）"
+
+  - id: memory-basics
+    stages: [memory]
+    tools: [remember_preference_tool, forget_preference_tool]
+    prompt_fragments:
+      - "买家表达稳定的长期偏好（材质忌口、风格取向等）时调 remember_preference_tool，跨会话生效；一次性临时要求不要记。"
+      - "买家明确表示某条历史偏好不再适用时调 forget_preference_tool，statement 必须照抄 <buyer-preferences> 里那一行的原文；本轮的一次性例外不要调。"
+      - "历史偏好以 <buyer-preferences> 注入，检索与推荐时主动参考；买家本轮的显式指令优先于历史偏好。"
+    criteria:
+      - "长期偏好写入/撤回落到对应记忆工具，不虚构已记住状态"
+      - "撤回只删点名的那条，不误伤其他偏好"
+      - "买家本轮显式指令与注入偏好冲突时，以本轮指令为准"
