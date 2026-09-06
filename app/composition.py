@@ -81,15 +81,24 @@ from app.infrastructure.vector.qdrant_product_index import QdrantProductIndex
 logger = logging.getLogger(__name__)
 
 
-def _prompt_fingerprint() -> str:
+def _prompt_fingerprint(include_skills: bool = False) -> str:
     """提示词文件指纹，用作语义缓存 namespace 的一部分。
 
     prompt 一改，旧缓存的回复就不再代表当前 Agent 行为，必须作废。
     读不到文件时返回固定值，不因此阻断启动。
+
+    include_skills（#14 C3）：skill 渐进加载开时，实际发送的 system prompt
+    由 definitions.yml 拼装而成——指纹必须把 definitions 纳入哈希，否则
+    skill-on 与 skill-off 两个配置共用一个指纹，缓存与归因都会串。
+    关（默认）= 只哈希 heng.yml，与历史逐字节一致（B2 resume 断点依赖）。
     """
     path = Path(__file__).resolve().parent / "application" / "prompts" / "heng.yml"
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+        digest = hashlib.sha256(path.read_bytes())
+        if include_skills:
+            skills_path = Path(__file__).resolve().parent / "skills" / "definitions.yml"
+            digest.update(skills_path.read_bytes())
+        return digest.hexdigest()[:8]
     except OSError:
         return "noprompt"
 
@@ -180,7 +189,7 @@ async def build_container() -> Container:
         threshold=settings.semantic_cache_threshold,
         enabled=settings.semantic_cache_enabled,
         # 模型名 + 提示词指纹入 key：改 prompt 或换模型后旧回复自动失效
-        namespace=f"{settings.llm_model}:{_prompt_fingerprint()}",
+        namespace=f"{settings.llm_model}:{_prompt_fingerprint(include_skills=settings.skill_loading_enabled)}",
     )
     knowledge_base = build_category_knowledge_base(settings)
 
@@ -283,6 +292,13 @@ async def build_container() -> Container:
         embedder=embedder,
         relevance_enabled=settings.preference_relevance_enabled,
     )
+    # #14 C3：skill 渐进加载（flag 门控，默认关 = 行为与指纹零变化）。
+    # 控制器同实例注入 factory（中间件读）与 orchestrator（每轮 set_stage）。
+    skill_stage = None
+    if settings.skill_loading_enabled:
+        from app.skills.router import StageRouter
+        from app.skills.stage import SkillStageController
+        skill_stage = SkillStageController(StageRouter())
     main_factory = MainAgentFactory(
         settings, search_factory, trade_factory, bus, preference_store, circuit_registry, throttle,
         sequencing=sequencing_tracker,
@@ -290,6 +306,7 @@ async def build_container() -> Container:
         order_provenance=order_provenance_tracker,
         confirmation=confirmation_tracker,
         preference_selector=preference_selector,
+        skill_stage=skill_stage,
     )
     def _forget_session(session_id: str) -> None:
         """会话被挤出内存时，把它的进程内判定状态一起清掉。
@@ -324,6 +341,7 @@ async def build_container() -> Container:
         drift_detector=drift_detector,
         preference_selector=preference_selector,
         preference_top_k=settings.preference_top_k,
+        skill_stage=skill_stage,
     )
 
     return Container(
@@ -342,7 +360,7 @@ async def build_container() -> Container:
         lexical_index=lexical_index,
         knowledge_base=knowledge_base,
         db_engine=db_engine,
-        prompt_fingerprint=_prompt_fingerprint(),
+        prompt_fingerprint=_prompt_fingerprint(include_skills=settings.skill_loading_enabled),
         prompt_variant=settings.prompt_variant,
         reranker_enabled=reranker is not None,
         lexical_gate=catalog_search.lexical_gate,

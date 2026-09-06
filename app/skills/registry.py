@@ -48,6 +48,37 @@ class SkillRegistry:
             parts.extend(spec.prompt_fragments)
         return "\n".join(part for part in parts if part)
 
+    def render_stages(self, stages: frozenset[Stage]) -> str:
+        """多阶段合并渲染：common 只出现一次，交付三档按固定顺序。
+
+        C3 控制器用——per-turn 拼装 system prompt 时 common 片段若随每个
+        阶段重复渲染，同一份纪律会在 prompt 里出现多份（token 白烧）。"""
+        parts: list[str] = []
+        for spec in self.for_stage(Stage.COMMON):
+            parts.extend(spec.prompt_fragments)
+        for stage in (Stage.SEARCH, Stage.TRADE, Stage.MEMORY):
+            if stage not in stages:
+                continue
+            for spec in self._skills:
+                if stage not in spec.stages:
+                    continue
+                parts.extend(spec.prompt_fragments)
+        return "\n".join(part for part in parts if part)
+
+    def tool_subset_for_stages(self, stages: frozenset[Stage]) -> tuple[str, ...]:
+        """多阶段并集的工具子集（common 工具恒在）。"""
+        subset: list[str] = []
+        seen: set[str] = set()
+        for stage in {Stage.COMMON, *stages}:
+            for spec in self._skills:
+                if stage not in spec.stages:
+                    continue
+                for tool in spec.tools:
+                    if tool not in seen:
+                        seen.add(tool)
+                        subset.append(tool)
+        return tuple(subset)
+
     def render_criteria(self, stage: Stage) -> list[str]:
         """该阶段生效的判据条目（去重、保序）。"""
         seen: set[str] = set()

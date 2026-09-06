@@ -120,6 +120,7 @@ class MainAgentOrchestrator:
         preference_selector: Optional[PreferenceSelector] = None,
         preference_top_k: int = 5,
         number_provenance_enabled: bool = True,
+        skill_stage=None,
     ) -> None:
         self._sessions = sessions
         self._bus = bus
@@ -133,6 +134,10 @@ class MainAgentOrchestrator:
         self._confirmation = confirmation
         self._token_budget_total = token_budget_total
         self._drift_detector = drift_detector
+        # #14 C3：skill 阶段控制器（flag 开时由 composition 注入）。
+        # 每轮按买家 query 刷新激活阶段，agent 的 system prompt 中间件据此
+        # 渐进注入——None = flag 关，现行为零变化。
+        self._skill_stage = skill_stage
         # 默认 selector 不带 embedder，退化为“按时间倒序取 top_k”，单测与无凭据环境可直接跑
         self._preference_selector = preference_selector or PreferenceSelector()
         self._preference_top_k = preference_top_k
@@ -222,6 +227,10 @@ class MainAgentOrchestrator:
         final_text = ""
         try:
             agent = await self._sessions.get_or_create(session_id)
+            if self._skill_stage is not None:
+                # #14 C3：每轮按买家 query 刷新激活阶段（保守路由——
+                # 无命中 = 全阶段），agent 的 system prompt 中间件据此渐进注入
+                self._skill_stage.set_stage(intent.raw_query)
             summary_before = agent.state.summary
             # 语义缓存：仅首轮（无历史上下文）且非写操作意图时尝试命中，命中则零模型调用
             has_history = bool(agent.state.context)

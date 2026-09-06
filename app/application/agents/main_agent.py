@@ -76,6 +76,7 @@ class MainAgentFactory:
         order_provenance: Optional[OrderProvenanceTracker] = None,
         confirmation: Optional[ConfirmationTracker] = None,
         preference_selector: Optional[PreferenceSelector] = None,
+        skill_stage=None,
     ) -> None:
         self._settings = settings
         self._search_factory = search_factory
@@ -93,6 +94,10 @@ class MainAgentFactory:
         self._loop_detector = loop_detector or LoopDetector(
             repeat_threshold=settings.loop_repeat_threshold,
         )
+        # #14 C3：skill 阶段控制器（flag 开时由 composition 注入）。
+        # 注入即启用：Task* 死重移出 toolkit、system prompt 换成阶段化拼装。
+        # None = flag 关，Agent 构造路径与二十六期逐字节一致（B2 resume 依赖）。
+        self._skill_stage = skill_stage
 
     def _resilience(self) -> list:
         """工具中间件链——与检索/订单两个工厂共用同一份定义。
@@ -113,16 +118,24 @@ class MainAgentFactory:
 
     def build(self, restored_state: Optional[AgentState] = None) -> Agent:
         prompts = load_prompts()["main_agent"]
+        skills_enabled = self._skill_stage is not None
 
         tools = [
             # 1. 业务工具：与子 Agent 同一批，主 Agent 可单干
             *self._search_factory.build_tools(),
             *self._trade_factory.build_tools(),
+        ]
+        if not skills_enabled:
             # 2. 内置 Task 计划工具（is_state_injected，挂 AgentState.tasks_context）
-            TaskCreate(),
-            TaskUpdate(),
-            TaskList(),
-            TaskGet(),
+            #    flag 开（skill 渐进加载）时不注册：C1 证据 = 全史流水 0 次调用，
+            #    8,348 chars = 工具 schema 总量的 57%，纯死重（每请求都发）。
+            tools += [
+                TaskCreate(),
+                TaskUpdate(),
+                TaskList(),
+                TaskGet(),
+            ]
+        tools += [
             # 3. SubAgent as Tool 调度（is_concurrency_safe 默认为 True，
             #    主 Agent 同一轮发起的多个派发会被 2.0 并发批执行）
             FunctionTool(
@@ -150,13 +163,22 @@ class MainAgentFactory:
             ),
         ]
 
+        middlewares = build_agent_middlewares(self._settings)
+        if skills_enabled:
+            # skill 定义对真实运行时工具名校验（拼错 = 静默缺工具，装载期拦），
+            # 然后挂阶段注入中间件（on_system_prompt 替换式变换）
+            tool_names = {tool.name for tool in tools if getattr(tool, "name", None)}
+            self._skill_stage.register_skills(tool_names=tool_names)
+            from app.application.agents.skill_stage import SkillStagePromptMiddleware
+            middlewares = [*middlewares, SkillStagePromptMiddleware(self._skill_stage)]
+
         return allow_business_tools(
             Agent(
                 name=prompts["name"],
                 system_prompt=prompts["system_prompt"],
                 model=create_chat_model(self._settings, throttle=self._throttle, bus=self._bus),
                 toolkit=Toolkit(tools=tools),
-                middlewares=build_agent_middlewares(self._settings),
+                middlewares=middlewares,
                 context_config=build_context_config(
                     self._settings.context_size,
                     self._settings.tool_result_limit,
