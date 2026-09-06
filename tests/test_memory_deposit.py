@@ -19,6 +19,7 @@ import pytest
 from app.domain.buyer.deposit import (
     MemoryDeposit,
     PreferenceMentionVerifier,
+    PreferenceRecallRestoredVerifier,
     ProductPresenceVerifier,
     RecommendationComplianceVerifier,
     VerificationResult,
@@ -284,6 +285,82 @@ class TestPreferenceMentionVerifier:
         assert verifier.check(
             transcript_on="[Agent] 您对塑料过敏，已避开相关材质", transcript_off="[Agent] 推荐如下",
         ).ok
+
+
+class TestPreferenceRecallRestoredVerifier:
+    """B3（二十七期）：forget 链的沉淀验证——方向与遵从判定相反。
+
+    语义：撤回生效 = 注入开臂的下游行为**恢复**（dislike 命中的商品回到
+    可推荐 + 无"偏好仍生效"声称）；注入开仍挡着它或声称排除 = 撤回链残留
+    （0 容忍，任务 B 指标表"记忆污染回归"）。注入关臂只是参考基线：
+    两臂都恢复才是正确行为，**不吃 contrast 作废**（对比纪律在这里方向相反）。
+    """
+
+    def _verifier(self):
+        return build_verifier({
+            "kind": "recall_restored",
+            "product": "Voyager",
+            "exclusion_markers": ["已排除", "为您排除", "仍然生效", "继续避开"],
+        })
+
+    def test_builds_recall_restored(self):
+        assert isinstance(self._verifier(), PreferenceRecallRestoredVerifier)
+
+    def test_product_back_in_recommendation_passes(self):
+        on = "[Agent] 最划算的是 Voyager 旅行三件套 记忆棉款（139 元）"
+        off = "[Agent] 推荐 Voyager 旅行三件套（139 元）"
+        result = self._verifier().check(on, off)
+        assert result.ok is True
+
+    def test_product_blocked_after_forget_fails(self):
+        on = "[Agent] 推荐非塑料的 Nomadica 旅行三件套（189 元）"
+        off = "[Agent] Voyager 旅行三件套（139 元）也不错"
+        result = self._verifier().check(on, off)
+        assert result.ok is False
+        assert "撤回" in result.detail or "未出现" in result.detail
+
+    def test_exclusion_claim_fails_even_if_product_mentioned(self):
+        on = "[Agent] 已排除塑料材质商品；Voyager 那款就不看了"
+        off = "[Agent] Voyager（139 元）"
+        result = self._verifier().check(on, off)
+        assert result.ok is False
+        assert "仍生效" in result.detail or "排除" in result.detail
+
+    def test_both_arms_restored_passes_no_contrast_invalidation(self):
+        """两臂都恢复 = 撤回链的正确终态——contrast 纪律在这里方向相反，
+        同判不定罪（对照 recommendation_compliance 的"两臂相同不作数"）。"""
+        on = "[Agent] Voyager 旅行三件套（139 元）最便宜"
+        off = "[Agent] Voyager 旅行三件套（139 元）"
+        assert self._verifier().check(on, off).ok is True
+
+    def test_missing_params_raise(self):
+        with pytest.raises(ValueError):
+            build_verifier({"kind": "recall_restored"})
+
+
+class TestForgetChainDownstream:
+    """B3：DOWNSTREAM_CASE 增 memory-forget-setup → memory-forget，
+    验证器方向取反（dislike → recall_restored；未撤回的 like 仍查不误伤）。"""
+
+    def test_forget_setup_is_registered_with_reversed_direction(self):
+        from scripts.eval.mem_deposit import DOWNSTREAM_CASE
+        assert DOWNSTREAM_CASE.get("memory-forget-setup") == "memory-forget"
+
+    def test_dislike_deposit_from_forget_chain_gets_recall_restored_spec(self):
+        from scripts.eval.mem_deposit import build_deposit
+        write = {"kind": "dislike", "statement": "不要塑料材质",
+                 "trigger_query": "记住两件事：我不要塑料材质的东西"}
+        deposit = build_deposit("memory-forget-setup", "b1", "sess-1", write)
+        assert deposit.verifier_spec["kind"] == "recall_restored"
+        assert "撤回" in deposit.assertion
+
+    def test_like_deposit_from_forget_chain_keeps_mention_semantics(self):
+        """未撤回的那条偏好（军绿色）不该被一起丢掉——mention 语义不变。"""
+        from scripts.eval.mem_deposit import build_deposit
+        write = {"kind": "like", "statement": "偏好军绿色",
+                 "trigger_query": "另外我偏好军绿色"}
+        deposit = build_deposit("memory-forget-setup", "b1", "sess-1", write)
+        assert deposit.verifier_spec["kind"] == "preference_mention"
 
 
 class TestVerificationResult:

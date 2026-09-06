@@ -29,11 +29,14 @@ REMEMBER_TOOL = "remember_preference_tool"
 
 # 先导档预登记：触发用例 → 验证下游用例（沉淀改变的行为在哪个用例里显形）。
 # preference-conflict 是会话内自写自用（第 1 轮写、第 2 轮推荐），下游 = 本用例
-# 自己（on/off 是两次独立执行，对照仍成立）；memory-forget 链的撤回语义
-# （撤回后旧行为应恢复）与验证器方向相反，留 M3 回写后再接。
+# 自己（on/off 是两次独立执行，对照仍成立）。
+# forget 链（B3，二十七期）：memory-forget-setup 写两条 → memory-forget 撤回
+# 其中一条并验证旧行为恢复——验证器方向取反（recall_restored），见
+# build_deposit 的 trigger 分支。
 DOWNSTREAM_CASE = {
     "memory-write": "memory-recall",
     "preference-conflict-cheapest-vs-dislike": "preference-conflict-cheapest-vs-dislike",
+    "memory-forget-setup": "memory-forget",
 }
 
 # 商品库事实（cases.yaml preference-conflict 注释）：Voyager 旅行三件套记忆棉款
@@ -106,7 +109,37 @@ def build_deposit(case_id: str, buyer_id: str, session_id: str, write: dict) -> 
     """一次成功写入 → 沉淀条目。验证器形态按 kind 预登记，未登记的 kind 拒绝。"""
     write_kind = write["kind"]
     statement = write["statement"]
-    if write_kind == "dislike":
+    if case_id == "memory-forget-setup":
+        # forget 链（B3）：验证方向取反。dislike 那条撤回后旧行为应恢复
+        # （recall_restored）；同轮写入的 like（军绿色）没被撤回，不该被
+        # 一起丢掉——mention 语义不变（cases.yaml memory-forget P1）。
+        if write_kind == "dislike":
+            verifier_spec = {
+                "kind": "recall_restored",
+                "product": DISLIKE_PRODUCT_KEYWORD,
+                "exclusion_markers": ["已排除", "为您排除", "仍然生效", "继续避开", "依旧避开"],
+            }
+            precondition = f"撤回该偏好的下游会话（memory-forget）询问命中「{DISLIKE_PRODUCT_KEYWORD}」品类"
+            assertion = (
+                f"撤回链语义（方向与遵从相反）：撤回后注入开的回复不得再受「{statement}」影响——"
+                f"「{DISLIKE_PRODUCT_KEYWORD}」回到可推荐且无'偏好仍生效'声称；残留即 FAIL（0 容忍）。"
+                "注入关为参考基线，两臂都恢复是正确终态，不作废"
+            )
+        elif write_kind == "like":
+            verifier_spec = {
+                "kind": "preference_mention",
+                "keywords": [statement],
+            }
+            precondition = "撤回另一条偏好的下游会话涉及颜色时"
+            assertion = (
+                f"未撤回的偏好不被误伤：注入开的下游回复仍体现「{statement}」；"
+                "两臂都提或都不提 = 注入没有改变行为，不作数"
+            )
+        else:
+            raise SystemExit(
+                f"forget 链的写入 kind={write_kind!r} 没有预登记的验证器形态——要扩先回写任务书"
+            )
+    elif write_kind == "dislike":
         verifier_spec = _dislike_verifier_spec()
         precondition = f"买家询问会命中「{DISLIKE_PRODUCT_KEYWORD}」所在品类的商品时"
         assertion = (

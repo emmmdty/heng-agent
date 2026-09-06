@@ -197,6 +197,46 @@ class RecommendationComplianceVerifier(DepositVerifier):
         return VerificationResult(ok=True, detail=f"注入开{on_detail}；注入关{off_detail}")
 
 
+@dataclass(frozen=True)
+class PreferenceRecallRestoredVerifier(DepositVerifier):
+    """撤回链验证（B3，二十七期）：方向与遵从判定**相反**。
+
+    遵从判定问"注入后行为有没有被偏好改变"；这里问"撤回后旧行为有没有
+    恢复"（任务 B 指标表"记忆污染回归：撤回偏好后旧偏好不得再影响回复，
+    0 容忍"）：
+      ① dislike 命中的商品必须回到可推荐（出现即算——撤回后它不该再被
+         材质挡掉，对齐 cases.yaml memory-forget P0 的"按结果判"）；
+      ② 不得声称该偏好仍然生效（"已为您排除…"/"仍然生效"类话术）。
+
+    注入开臂残留 → FAIL；注入关臂只是参考基线——两臂都恢复才是撤回链的
+    正确终态，**不吃 contrast 作废**（对比纪律在这里方向相反，
+    与 recommendation_compliance 的"两臂相同不作数"刻意不同）。
+    """
+
+    product: str
+    exclusion_markers: tuple[str, ...]
+
+    def _judge(self, transcript: str) -> tuple[bool, str]:
+        claim = next((m for m in self.exclusion_markers if m in transcript), None)
+        if claim:
+            return False, f"声称偏好仍生效（命中标记「{claim}」）"
+        if self.product not in transcript:
+            return False, (
+                f"撤回后「{self.product}」未出现在推荐里——旧偏好可能仍在生效"
+            )
+        return True, f"「{self.product}」回到推荐（撤回生效）"
+
+    def check(self, transcript_on: str, transcript_off: str) -> VerificationResult:
+        on_ok, on_detail = self._judge(transcript_on)
+        off_ok, off_detail = self._judge(transcript_off)
+        if not on_ok:
+            return VerificationResult(ok=False, detail=f"注入开撤回残留：{on_detail}")
+        return VerificationResult(
+            ok=True,
+            detail=f"注入开{on_detail}；注入关参考：{off_detail}",
+        )
+
+
 _VERIFIER_KINDS = {
     "product_presence": lambda spec: ProductPresenceVerifier(
         product=_non_empty_text(spec["product"], "product"),
@@ -212,6 +252,10 @@ _VERIFIER_KINDS = {
         choice_markers=_non_empty_keywords(spec["choice_markers"]),
         main_rec_markers=_non_empty_keywords(spec["main_rec_markers"]),
         require_contrast=bool(spec.get("require_contrast", True)),
+    ),
+    "recall_restored": lambda spec: PreferenceRecallRestoredVerifier(
+        product=_non_empty_text(spec["product"], "product"),
+        exclusion_markers=_non_empty_keywords(spec["exclusion_markers"]),
     ),
 }
 
