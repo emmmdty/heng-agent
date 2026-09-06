@@ -188,6 +188,12 @@ class TestResolveJudgeModel:
 
 
 class TestCallLlmWithRetry:
+    @pytest.fixture(autouse=True)
+    def _gateway_env(self, monkeypatch):
+        """call_llm_with_retry 直读 os.environ['LLM_BASE_URL']；本地靠 .env（gitignored），
+        CI 没有——给占位地址。本组测试全用假 client，从不真连网关。"""
+        monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:9/v1")
+
     class _FlakyClient:
         def __init__(self, failures: int) -> None:
             self.failures = failures
