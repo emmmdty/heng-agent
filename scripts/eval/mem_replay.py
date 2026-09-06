@@ -75,6 +75,38 @@ ARM_EXPECT = {
 }
 
 
+def find_eval_preference_leftovers(data_dir: str | Path) -> list[Path]:
+    """data/preferences/ 下的 eval-* 残留（历期评测写入的买家偏好）。
+
+    回放的买家 id 全部以 eval- 开头（ab_participant_ids 派生），真实买家
+    不会撞这个前缀。
+    """
+    prefs = Path(data_dir) / "preferences"
+    if not prefs.is_dir():
+        return []
+    return sorted(prefs.glob("eval-*.json"))
+
+
+def purge_eval_preference_leftovers(data_dir: str | Path, stamp: str) -> tuple[list[str], str]:
+    """把 eval-* 残留移入备份目录（不删——评测状态可恢复、误伤可回滚）。
+
+    返回 (移走的文件名列表, 备份目录)。没有残留时返回 ([], "")。
+    """
+    leftovers = find_eval_preference_leftovers(data_dir)
+    if not leftovers:
+        return [], ""
+    backup = Path(data_dir) / f"preferences-leftovers-backup-{stamp}"
+    backup.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    for path in leftovers:
+        target = backup / path.name
+        if target.exists():  # 同 stamp 重跑：备份里已有同名，直接覆盖移动
+            target.unlink()
+        path.rename(target)
+        moved.append(path.name)
+    return moved, str(backup)
+
+
 def select_replay_cases(cases: list[dict], only: str | None = None) -> list[dict]:
     """按预登记子集挑用例；--only 在子集内取交（M1 先导档挑 2 条用）。
 
@@ -202,6 +234,29 @@ async def main_async(args: argparse.Namespace) -> int:
         arm_a_url=urls["A"], arm_b_url=urls["B"],
     )
     preflight_arms(healths)
+
+    # 两臂必须共用仓库 data/（流水与偏好不能分家——mem_deposit 对账依赖）
+    data_dirs = {str(h.get("data_dir") or "") for h in healths.values()}
+    data_dirs.discard("")
+    if len(data_dirs) != 1:
+        raise SystemExit(
+            f"两臂 DATA_DIR 不一致（{sorted(data_dirs)}）——记忆回放要求两臂共用仓库 data/"
+        )
+    data_dir = next(iter(data_dirs))
+
+    # 跨期残留清洗：历期评测的 eval-* 买家偏好会让注入臂的**写入用例**看到
+    # '已存档'而跳过工具调用（M1 先导实测），污染沉淀提取与写入对读数。
+    leftovers = find_eval_preference_leftovers(data_dir)
+    if args.dry_run:
+        if leftovers:
+            print(
+                f"⚠️ 检测到 {len(leftovers)} 个历期 eval-* 偏好残留（真实跑测会自动移入备份目录）：\n"
+                + "\n".join(f"  - {p.name}" for p in leftovers),
+            )
+    else:
+        moved, backup_dir = purge_eval_preference_leftovers(data_dir, stamp=datetime.now().strftime("%Y%m%d-%H%M%S"))
+        if moved:
+            print(f"[mem] 已清洗 {len(moved)} 个 eval-* 偏好残留 → {backup_dir}：{'、'.join(moved)}", flush=True)
 
     lines = _arm_header_lines(healths, urls, judge_model)
     lines.extend(notes)

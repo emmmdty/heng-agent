@@ -26,3 +26,4 @@ eval/ab-crossrejudge-*.json
 eval/mem-partial-*.json
 eval/mem-run-*.json
 eval/mem-report-*.md
+eval/mem-deposit-*.json

@@ -9,12 +9,17 @@
   3. --only 在预登记子集内取交（先导档 M1 挑 2 条），取空报错。
 执行段/判段/统计/报告全部委托 run_ab_pipeline（另有测试钉住），此处不重复。
 """
+import json
+from pathlib import Path
+
 import pytest
 
 from scripts.eval.mem_replay import (
     ARM_EXPECT,
     PREFERENCE_PRESET_IDS,
+    find_eval_preference_leftovers,
     preflight_arms,
+    purge_eval_preference_leftovers,
     select_replay_cases,
 )
 
@@ -129,3 +134,38 @@ class TestPreflightArms:
         """臂语义钉死：A=关、B=开。写反了整轮读数方向就反了。"""
         assert ARM_EXPECT["A"]["variant"] == "mem-inject-off"
         assert ARM_EXPECT["B"]["variant"] == "mem-inject-on"
+
+
+class TestEvalPreferenceLeftovers:
+    """跨期残留清洗（M1 先导挖出的真缺陷）。
+
+    历期评测写入的 eval-* 买家偏好留在 data/preferences/ 里，下一轮回放的
+    注入臂会把残留偏好注入**写入用例本身**——模型看到'已存档'就跳过工具
+    调用（M1 实测：臂 B 写入零 tool.invoke，回复声称'之前也已经存档过了'，
+    被 judge 双序判为不实陈述）。清洗是回放可重复性的前置，不是可选卫生。
+    """
+
+    def test_finds_eval_prefixed_files_only(self, tmp_path):
+        prefs = tmp_path / "preferences"
+        prefs.mkdir()
+        (prefs / "eval-memory-buyer-abbk0.json").write_text("[]", encoding="utf-8")
+        (prefs / "real-buyer.json").write_text("[]", encoding="utf-8")
+        (prefs / "sub").mkdir()
+        found = find_eval_preference_leftovers(tmp_path)
+        assert [p.name for p in found] == ["eval-memory-buyer-abbk0.json"]
+
+    def test_purge_moves_to_backup_and_keeps_non_eval(self, tmp_path):
+        prefs = tmp_path / "preferences"
+        prefs.mkdir()
+        (prefs / "eval-a.json").write_text("[]", encoding="utf-8")
+        (prefs / "real-buyer.json").write_text("[]", encoding="utf-8")
+        moved, backup_dir = purge_eval_preference_leftovers(tmp_path, stamp="20260906-120000")
+        assert moved == ["eval-a.json"]
+        assert (Path(backup_dir) / "eval-a.json").is_file()
+        assert not (prefs / "eval-a.json").exists()
+        assert (prefs / "real-buyer.json").is_file()
+
+    def test_purge_without_leftovers_is_noop(self, tmp_path):
+        moved, backup_dir = purge_eval_preference_leftovers(tmp_path, stamp="s")
+        assert moved == []
+        assert backup_dir == ""
