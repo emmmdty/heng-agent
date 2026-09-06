@@ -139,13 +139,38 @@ def render_ab_report(payload: dict) -> str:
 
     if payload.get("positive_control"):
         lines += ["## 阳性对照（有效性自证）", ""]
-        lines.append("- 本轮臂 B 是**已知更差**的提示词（摘确认规则关键句），预期判出负向显著。")
-        if sig["significant"] and (win.get("win_rate") or 0) > 0.5:
-            lines.append("- ✅ 负向显著：已知更差的臂 B 被判显著更差——工具有区分度，有效性自证通过。")
-        elif sig["significant"]:
-            lines.append("- ❌ 方向反了：已知更差的提示词被判更优——读数有效性存疑，先查工具再谈胜负。")
+        arm_config = payload.get("arm_config") or {}
+        weaker = next(
+            (
+                arm
+                for arm in ("A", "B")
+                if "weaker" in str((arm_config.get(arm) or {}).get("variant") or "")
+            ),
+            None,
+        )
+        if weaker is None:
+            lines.append(
+                "- ❌ 找不到已知更差臂（arm_config 变体名需含 'weaker'，如 control-weaker-confirm）"
+                "——臂设置与报告口径不符，人工核对两臂变体后再下结论。"
+            )
         else:
-            lines.append("- ❌ 未判出显著差异——工具有区分度缺陷，先修工具再谈胜负。")
+            win_rate = win.get("win_rate") or 0
+            # win_rate 是 A 臂视角；已知更差臂被判更差 = 负向显著（方向随 weaker 换位）
+            weaker_won = (win_rate > 0.5) if weaker == "A" else (win_rate < 0.5)
+            lines.append(
+                f"- 已知更差臂 = **臂 {weaker}**（变体 {(arm_config.get(weaker) or {}).get('variant')}），"
+                "预期被判负向显著。"
+            )
+            if sig["significant"] and not weaker_won:
+                lines.append(
+                    f"- ✅ 负向显著：已知更差的臂 {weaker} 被判显著更差——工具有区分度，有效性自证通过。"
+                )
+            elif sig["significant"]:
+                lines.append(
+                    f"- ❌ 方向反了：已知更差的臂 {weaker} 被判更优——读数有效性存疑，先查工具再谈胜负。"
+                )
+            else:
+                lines.append("- ❌ 未判出显著差异——工具有区分度缺陷，先修工具再谈胜负。")
         lines.append("")
 
     lines += ["## 护栏读数（一票否决，与胜率无关）", ""]

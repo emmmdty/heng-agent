@@ -145,39 +145,55 @@ class TestOptionalSections:
 
 
 class TestPositiveControl:
-    def test_expected_negative_significance_passes(self):
-        text = render_ab_report(_payload(
+    """阳性对照段落数据驱动：从 arm_config 变体名识别已知更差臂，
+    不再硬编码"更差 = 臂 B"（M3 对照轮 weaker 在 A 位，旧文案把结论写反）。"""
+
+    @staticmethod
+    def _with_weaker(arm: str, win_rate: float, significant: bool):
+        arm_config = {
+            "A": {"fingerprint": "a0915fac", "variant": "", "model": "mimo-v2.5"},
+            "B": {"fingerprint": "b2222222", "variant": "candidate-x", "model": "mimo-v2.5"},
+        }
+        arm_config[arm]["variant"] = "control-weaker-confirm"
+        return render_ab_report(_payload(
             positive_control=True,
             label="阳性对照",
-            significance={"judge_valid": True, "enough_pairs": True, "p_value": 0.001,
-                          "ci_excludes_half": True, "significant": True, "reasons": []},
-            win_rate={"n": 40, "wins": 30, "losses": 6, "ties": 4, "n_error": 0,
-                      "n_decisive": 36, "win_rate": 30 / 40, "win_rate_excl_ties": 30 / 36},
+            arm_config=arm_config,
+            significance={"judge_valid": True, "enough_pairs": True, "p_value": 0.01,
+                          "ci_excludes_half": True, "significant": significant, "reasons": []},
+            win_rate={"n": 40, "wins": int(40 * win_rate), "losses": 40 - int(40 * win_rate),
+                      "ties": 4, "n_error": 0, "n_decisive": 36,
+                      "win_rate": win_rate, "win_rate_excl_ties": win_rate},
         ))
-        assert "阳性对照" in text
-        assert "负向显著" in text
-        assert "工具有区分度" in text
+
+    def test_expected_negative_significance_passes_weaker_on_b(self):
+        """旧约定（weaker=B）：A 视角胜率高 = B 被判更差 → 自证通过。"""
+        text = self._with_weaker("B", win_rate=0.75, significant=True)
+        assert "负向显著" in text and "工具有区分度" in text and "臂 B" in text
+
+    def test_expected_negative_significance_passes_weaker_on_a(self):
+        """M3 对照轮实际形态（weaker=A）：A 视角胜率 0.22 低 = A 被判更差 → 自证通过。"""
+        text = self._with_weaker("A", win_rate=0.22, significant=True)
+        assert "负向显著" in text and "工具有区分度" in text and "臂 A" in text
 
     def test_not_significant_is_tool_deficiency(self):
-        text = render_ab_report(_payload(
-            positive_control=True,
-            label="阳性对照",
-            significance={"judge_valid": True, "enough_pairs": True, "p_value": 0.4,
-                          "ci_excludes_half": False, "significant": False,
-                          "reasons": ["符号检验 p=0.4 不满足 p<0.05"]},
-        ))
+        text = self._with_weaker("B", win_rate=0.55, significant=False)
         assert "区分度" in text
 
     def test_inverted_direction_flagged(self):
+        text = self._with_weaker("B", win_rate=0.15, significant=True)
+        assert "方向" in text
+
+    def test_missing_weaker_marker_asks_for_manual_check(self):
         text = render_ab_report(_payload(
             positive_control=True,
             label="阳性对照",
             significance={"judge_valid": True, "enough_pairs": True, "p_value": 0.01,
                           "ci_excludes_half": True, "significant": True, "reasons": []},
-            win_rate={"n": 40, "wins": 6, "losses": 30, "ties": 4, "n_error": 0,
-                      "n_decisive": 36, "win_rate": 6 / 40, "win_rate_excl_ties": 6 / 36},
+            win_rate={"n": 40, "wins": 30, "losses": 6, "ties": 4, "n_error": 0,
+                      "n_decisive": 36, "win_rate": 30 / 40, "win_rate_excl_ties": 30 / 36},
         ))
-        assert "方向" in text
+        assert "人工核对" in text
 
 
 def test_fault_clear_failures_rendered():
