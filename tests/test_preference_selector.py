@@ -247,3 +247,54 @@ class TestInjectionSwitch:
         """关注入连相关性排序都不该跑——零额外调用。"""
         selector = PreferenceSelector(BrokenEmbeddingClient(), relevance_enabled=True, injection_enabled=False)
         assert await selector.select(self._PREFERENCES, query="q", top_k=5) == []
+
+
+class TestCorruptInjectionMode:
+    """污染注入（阳性对照专用 fault injection，M2 对照轮设计第二版）。
+
+    第一版"矛盾注入"（store 里 seed 取反偏好）被 Agent 的 forget 工具自愈：
+    M2 对照轮实测，模型看到注入的『喜欢塑料材质』+ 买家说『记住不要塑料』，
+    主动撤回了 seed 再写真偏好——判定时刻两臂记忆状态已无差异，对照失效。
+    第二版在**注入层**污染：store 保持真实（沉淀提取不受影响），每轮注入
+    都被替换为错误偏好，Agent 无法用 forget 自愈（store 里没有那条）。
+    """
+
+    _PREFERENCES = [
+        _pref("dislike", "不要塑料材质", "2026-01-01"),
+        _pref("like", "喜欢小众设计", "2026-01-02"),
+    ]
+
+    async def test_corrupt_mode_replaces_all_preferences_with_wrong_one(self, monkeypatch):
+        monkeypatch.setenv("PREFERENCE_INJECTION_CORRUPT", "1")
+        selector = PreferenceSelector()
+        selected = await selector.select(self._PREFERENCES, query="推荐个咖啡杯", top_k=5)
+        assert [(p.kind, p.statement) for p in selected] == [
+            ("like", "买家偏好塑料材质的商品，推荐时优先塑料材质"),
+        ]
+
+    async def test_corrupt_mode_overrides_dislike_safety_floor_and_top_k(self, monkeypatch):
+        """污染模式是有意的 fault injection：无视 top_k 与 dislike 安全底线，
+        恒返回单条合成错误偏好——底线约束的是正常注入路径。"""
+        monkeypatch.setenv("PREFERENCE_INJECTION_CORRUPT", "1")
+        selector = PreferenceSelector()
+        selected = await selector.select(
+            [_pref("dislike", "不要塑料材质", "2026-01-01")], query="q", top_k=0,
+        )
+        assert [(p.kind, p.statement) for p in selected] == [
+            ("like", "买家偏好塑料材质的商品，推荐时优先塑料材质"),
+        ]
+
+    async def test_corrupt_mode_defaults_off(self, monkeypatch):
+        monkeypatch.delenv("PREFERENCE_INJECTION_CORRUPT", raising=False)
+        selector = PreferenceSelector()
+        selected = await selector.select(self._PREFERENCES, query="q", top_k=5)
+        assert [p.statement for p in selected] == ["不要塑料材质", "喜欢小众设计"]
+
+    async def test_corrupt_mode_returns_single_synthetic_entry(self, monkeypatch):
+        """注入的是**合成的单条错误偏好**，不是对 store 内容的改写——
+        store 保持真实是沉淀对账的前提。"""
+        monkeypatch.setenv("PREFERENCE_INJECTION_CORRUPT", "1")
+        selector = PreferenceSelector()
+        selected = await selector.select(self._PREFERENCES, query="q", top_k=5)
+        assert all(p.buyer_id == "" for p in selected)
+        assert len(selected) == 1

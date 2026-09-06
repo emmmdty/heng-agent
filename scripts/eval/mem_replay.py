@@ -17,6 +17,10 @@ prompt_variant 用 mem-inject-off / mem-inject-on 自报臂身份。判段复用
     VECTOR_STORE_DIR=/tmp/opencode/qdrant-mema PROMPT_VARIANT=mem-inject-off \
         PREFERENCE_INJECTION_ENABLED=0 \
         uv run uvicorn app.presentation.server:app --port 8015
+    # 阳性对照轮的臂 A（污染注入，8016）——store 保持真实，注入层每轮污染
+    VECTOR_STORE_DIR=/tmp/opencode/qdrant-memp PROMPT_VARIANT=mem-weaker-corrupt-injection \
+        PREFERENCE_INJECTION_CORRUPT=1 \
+        uv run uvicorn app.presentation.server:app --port 8016
 
 两臂 DATA_DIR 都用仓库默认（流水不能落临时目录——二十三期教训）；
 per-arm buyer 派生（-ab{arm}k{n}）已隔离两臂的记忆写入。
@@ -30,10 +34,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -49,7 +52,6 @@ from scripts.eval.ab_run import (  # noqa: E402
     _arm_header_lines,
     _fetch_health,
     _plan_lines,
-    ab_participant_ids,
     guard_judge_models,
     plan_ab_run,
     preflight,
@@ -77,43 +79,14 @@ ARM_EXPECT = {
 }
 
 # 阳性对照臂语义（已知更差——工具有效性自证，模式照抄二十五期）：
-# A=矛盾注入（取反偏好 seed + 正常注入；变体名含 weaker 供渲染器数据驱动
-# 识别弱臂），B=正常注入。
+# A=污染注入（服务以 PREFERENCE_INJECTION_CORRUPT=1 起服：注入层每轮替换为
+# 错误偏好，store 保持真实，Agent 无法用 forget 自愈——第一版"矛盾注入"
+# 的 store seed 被 Agent 主动撤回，见 M2 执行实录）；变体名含 weaker 供
+# 渲染器数据驱动识别弱臂。B=正常注入。
 CONTROL_ARM_EXPECT = {
-    "A": {"variant": "mem-weaker-contradiction"},
+    "A": {"variant": "mem-weaker-corrupt-injection"},
     "B": {"variant": "mem-inject-on"},
 }
-
-# 矛盾注入的 seed 内容：与注入链会写入的真偏好（dislike 不要塑料材质）取反。
-NEGATED_PREFERENCE = {"kind": "like", "statement": "喜欢塑料材质"}
-
-
-def seed_contradiction_preferences(data_dir: str | Path, cases: list[dict], k: int) -> list[str]:
-    """给**对照臂（A）**的每个买家预写取反偏好，制造已知更差的矛盾记忆状态。
-
-    buyer id 按臂后缀派生（-abak{n}），seed 只会被对照臂读到；跑中 memory-write
-    会再写入真偏好（store 幂等不冲突）→ 该买家同时持有两条矛盾偏好。
-    重复 seed 幂等（整文件重写）。文件 schema 与 JsonFilePreferenceStore 一致，
-    schema 不兼容 = 对照臂静默回到无偏好态 = 自证轮白跑（有测试钉住）。
-    """
-    prefs_dir = Path(data_dir) / "preferences"
-    prefs_dir.mkdir(parents=True, exist_ok=True)
-    seeded: list[str] = []
-    for case in cases:
-        for sample_index in range(k):
-            buyer_id = ab_participant_ids(case, "A", sample_index)[1]
-            if buyer_id in seeded:  # 多个用例声明同一 buyer_id 时只 seed 一次
-                continue
-            payload = [{
-                **NEGATED_PREFERENCE,
-                "buyer_id": buyer_id,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }]
-            (prefs_dir / f"{buyer_id}.json").write_text(
-                json.dumps(payload, ensure_ascii=False), encoding="utf-8",
-            )
-            seeded.append(buyer_id)
-    return seeded
 
 
 def find_eval_preference_leftovers(data_dir: str | Path) -> list[Path]:
@@ -248,8 +221,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="从 eval/mem-partial-*.json 续跑（跳过已完成样本，前置按同臂同样本补回）")
     parser.add_argument("--label", default="", help="报告标签（如 M1 先导/M2 全量）")
     parser.add_argument("--positive-control", action="store_true",
-                        help="阳性对照模式：臂 A=矛盾注入（已知更差，起服前 seed 取反偏好、"
-                             "变体须为 mem-weaker-contradiction），臂 B=正常注入；"
+                        help="阳性对照模式：臂 A=污染注入（服务须以 PREFERENCE_INJECTION_CORRUPT=1 起服，"
+                             "变体须为 mem-weaker-corrupt-injection），臂 B=正常注入；"
                              "报告按有效性自证渲染。子集建议 memory-write,memory-recall,"
                              "preference-conflict-cheapest-vs-dislike（写入用例是被测链路的前置）")
     parser.add_argument("--eval-dir", default=str(EVAL_DIR), help="产物目录（mem- 前缀分桶）")
@@ -301,26 +274,15 @@ async def main_async(args: argparse.Namespace) -> int:
                 + "\n".join(f"  - {p.name}" for p in leftovers),
             )
         if args.positive_control:
-            plan_buyers = [
-                ab_participant_ids(case, "A", i)[1]
-                for case in cases for i in range(args.k)
-            ]
             print(
-                f"[对照模式] dry-run 预览：开跑前将给 {len(plan_buyers)} 个对照臂买家 seed 取反偏好"
-                "（喜欢塑料材质）：\n  " + "、".join(plan_buyers),
+                "[对照模式] dry-run 预览：臂 A 应以 PREFERENCE_INJECTION_CORRUPT=1 起服"
+                "（注入层污染，store 保持真实，Agent 无法用 forget 自愈）；"
+                "开跑前会先清洗历期 eval-* 偏好残留。",
             )
     else:
         moved, backup_dir = purge_eval_preference_leftovers(data_dir, stamp=datetime.now().strftime("%Y%m%d-%H%M%S"))
         if moved:
             print(f"[mem] 已清洗 {len(moved)} 个 eval-* 偏好残留 → {backup_dir}：{'、'.join(moved)}", flush=True)
-        if args.positive_control:
-            # seed 必须在 purge 之后：先清洗历期残留、再种矛盾偏好，顺序反了 seed 会被清掉
-            seeded = seed_contradiction_preferences(data_dir, cases, args.k)
-            print(
-                f"[对照模式] 已给 {len(seeded)} 个对照臂买家 seed 取反偏好"
-                "（喜欢塑料材质）——已知更差的矛盾记忆状态",
-                flush=True,
-            )
 
     lines = _arm_header_lines(healths, urls, judge_model)
     lines.extend(notes)
