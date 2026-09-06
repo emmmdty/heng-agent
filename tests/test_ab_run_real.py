@@ -429,7 +429,7 @@ class TestRunAbPipeline:
 
     async def _pipeline(self, tmp_path, cases, k=1, *, judge_factory=None, second_judge_model="",
                         dual_judge_pairs=0, resume_path=None, execute_fn=None, fail=(),
-                        seconds_per_intent=None, product_prefix="ab"):
+                        seconds_per_intent=None, product_prefix="ab", healths=None):
         from scripts.eval.ab_run import run_ab_pipeline
 
         if execute_fn is None:
@@ -452,7 +452,7 @@ class TestRunAbPipeline:
         payload = await run_ab_pipeline(
             cases=cases, k=k, pairing="diagonal",
             judge_model="longcat-2.0",
-            healths=self._healths(), urls={"A": "http://a:8000", "B": "http://b:8012"},
+            healths=healths or self._healths(), urls={"A": "http://a:8000", "B": "http://b:8012"},
             arm_lines={"A": "配置行A", "B": "配置行B"},
             arm_config=self._arm_config(),
             ground_truth="事实表", eval_dir=tmp_path, stamp="20260905-170000",
@@ -625,6 +625,59 @@ class TestRunAbPipeline:
         await self._pipeline(tmp_path, [_case("c1"), _case("c2")], resume_path=partial)
         assert not partial.exists()
         assert not (tmp_path / "ab-partial-20260905-170000.json").exists()
+
+    async def test_error_ridden_judging_with_empty_notes_does_not_crash(self, tmp_path):
+        """烧前评审（明日额度恢复前最后一审）抓到的必崩点：
+
+        judge_valid=True（error 对不进互换分母，rate 靠小分母达标）+ error 行
+        存在 + 无 pair error + 成本审计干净（healths 带 data_dir 且流水齐全
+        → cost_notes 空）→ notes == [] → 旧代码 `notes[-1]` IndexError。
+        这正是 429 部分失败时最可能的生产形态：管线应以"断点已保留"附注
+        优雅退出，而不是 traceback（traceback 会让操作者重跑 → 重烧 480 judge）。"""
+        conv = tmp_path / "convdata" / "conversations"
+        conv.mkdir(parents=True)
+        partial = tmp_path / "ab-partial-earlier.json"
+        partial.write_text(json.dumps({
+            "label": "测试", "pairing": "diagonal",
+            "plan": {"k": 1, "pairing": "diagonal",
+                     "case_ids": [f"c{i}" for i in range(1, 11)]},
+            "arm_config": self._arm_config(),
+            "results": [
+                {"case_id": f"c{i}", "arm": arm, "sample_index": 0,
+                 "session_id": f"s-{arm}{i}", "transcript": f"T-{arm}-{i}",
+                 "ok": True, "error": ""}
+                for i in range(1, 11) for arm in ("A", "B")
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        def factory(model):
+            async def judge_call(prompt):
+                import re
+                found = re.search(r"T-A-(\d+)", prompt)
+                if int(found.group(1)) % 2 == 0:  # 一半的对整体 429
+                    raise RuntimeError("Error code: 429")
+                return "裁决: 平局\n理由: 相当"
+            return judge_call
+
+        healths = self._healths()
+        for arm in ("A", "B"):
+            healths[arm]["data_dir"] = str(tmp_path / "convdata")
+        for i in range(1, 11):
+            for arm in ("A", "B"):
+                (conv / f"s-{arm}{i}.jsonl").write_text(json.dumps({
+                    "kind": "turn", "role": "agent", "model": "mimo-v2.5",
+                    "latency_ms": 100, "prompt_tokens": 10, "completion_tokens": 10,
+                }), encoding="utf-8")
+
+        payload, progress = await self._pipeline(
+            tmp_path, [_case(f"c{i}") for i in range(1, 11)],
+            judge_factory=factory, resume_path=partial, healths=healths,
+        )
+        assert payload["swap"]["n_error"] == 5
+        assert any("断点" in line or "保留" in line for line in progress), (
+            "else 分支必须给出'断点保留'的可见附注（notes 为空时也不能崩）"
+        )
+        assert partial.exists()
 
     async def test_dual_judge_subset_measured(self, tmp_path):
         def factory(model):

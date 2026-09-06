@@ -859,7 +859,15 @@ async def run_ab_pipeline(
         if resume_path is not None:
             resume_path.unlink(missing_ok=True)
     else:
-        progress(f"⚠️ {report_payload['notes'][-1]}")
+        # notes 可能为空（无 pair error + 成本审计干净时只差 judge error 这一条）
+        # ——B2 认证轮实测：429 部分失败 + rate 靠小分母达标就是这个形态，
+        # IndexError 会让管线以 traceback 退出、操作者误重跑（重烧全部 judge）。
+        n_judge_err = sum(1 for r in rows if r.get("error_ab") or r.get("error_ba"))
+        note = report_payload["notes"][-1] if report_payload["notes"] else (
+            f"判段存在 {n_judge_err} 个 error 对——断点已保留，"
+            f"可用 --resume {partial_path} 重判（不重烧执行段）。"
+        )
+        progress(f"⚠️ {note}")
 
     report_payload["report_path"] = str(report_path)
     report_payload["run_json_path"] = str(run_json_path)
