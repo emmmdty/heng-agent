@@ -47,13 +47,28 @@ def _healths_ok():
 
 class TestSelectReplayCases:
     def test_preset_ids_are_pre_registered_and_complete(self):
-        """预登记子集钉死：写入/读取/会话内冲突/撤回链五条——指标表的人群，
-        改动走回写通道，不在脚本里悄悄增删。"""
+        """预登记子集钉死：写入/读取/会话内冲突/撤回链 + B1 敏感层扩容四条
+        （共享 setup 写两条偏好）——指标表的人群（二十七期 B1，分层口径见
+        交接文档「五之一」任务 B 回写块），改动走回写通道，不在脚本里悄悄增删。"""
         assert set(PREFERENCE_PRESET_IDS) == {
             "memory-write", "memory-recall",
             "preference-conflict-cheapest-vs-dislike",
             "memory-forget-setup", "memory-forget",
+            "preference-inject-setup", "preference-inject-multi",
+            "preference-cross-category", "preference-like-drives-choice",
+            "preference-round-override",
         }
+
+    def test_setup_precedes_dependents_in_preset_order(self):
+        """共享 setup 必须先于四条依赖它的用例——记忆链靠顺序成立
+        （build_execution_plan 按传入顺序跑，setup 排后 = 后继评空前提）。"""
+        ids = list(PREFERENCE_PRESET_IDS)
+        assert ids.index("preference-inject-setup") < min(
+            ids.index(cid) for cid in (
+                "preference-inject-multi", "preference-cross-category",
+                "preference-like-drives-choice", "preference-round-override",
+            )
+        )
 
     def test_selects_preset_from_cases(self):
         cases = [_case(cid) for cid in
@@ -80,6 +95,17 @@ class TestSelectReplayCases:
         cases = [_case(cid) for cid in PREFERENCE_PRESET_IDS]
         with pytest.raises(SystemExit):
             select_replay_cases(cases, only="no-fabrication")
+
+    def test_only_missing_requires_fails_loudly(self):
+        """选中依赖者而漏选前置 = 后继评空前提而外观正常——requires 不会
+        被自动补跑，必须在选择阶段报错留名（烧前审查建议项）。"""
+        cases = [_case(cid) for cid in PREFERENCE_PRESET_IDS]
+        for case in cases:
+            if case["id"] == "preference-inject-multi":
+                case["requires"] = ["preference-inject-setup"]
+        with pytest.raises(SystemExit) as err:
+            select_replay_cases(cases, only="preference-inject-multi")
+        assert "preference-inject-setup" in str(err.value)
 
 
 class TestPreflightArms:

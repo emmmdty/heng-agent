@@ -95,15 +95,18 @@ knowledge:
 eval:
 	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py
 
-# 主线档：全部 55 条剔掉 11 条红队 = 44 条，与二十三期 R7 基线**同一份考卷**
+# 主线档：全部用例剔掉 11 条红队 + 5 条 B1 记忆敏感用例（mem 标签，归 B2
+# 回放人群）= 44 条，与二十三期 R7 基线**同一份考卷**
 # （用例集身份 d9e463d2，已与 eval/report-20260904-180527.json 逐位核对）。
 #
 # 为什么要单独一档：red team 用例是二十三期加的，而 `full` 是隐含标签
 # （所有用例都属于它），于是 `make eval` 从那以后跑的是 55 条。
 # 交接文档与贡献证明里"44 条 44/44、均分 0.993"这条基线一度**没有选择器能复现**，
 # 而二十五期 A/B 的一票否决护栏引用的正是它——拿 55 条那轮去比就是两把尺子。
+# 二十七期 B1 扩容后同理：mem 用例若不排除，主线分母 44 → 49，
+# C4 护栏轮与 R8（report-20260905-142017.json）的对比就断了。
 eval-mainline:
-	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py --exclude-tag redteam
+	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py --exclude-tag redteam,mem
 
 # 冒烟档：日常改代码只跑这一档。
 eval-smoke:

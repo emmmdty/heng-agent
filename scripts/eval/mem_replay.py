@@ -62,7 +62,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EVAL_DIR = PROJECT_ROOT / "eval"
 
 # 预登记用例子集 = 主指标的人群（冻结在交接文档「五之一」任务 B 指标表）：
-# 写入 / 跨会话读取 / 会话内偏好冲突 / 撤回链（撤回前写两条 + 撤回后验证）。
+# 写入 / 跨会话读取 / 会话内偏好冲突 / 撤回链（撤回前写两条 + 撤回后验证）
+# + 二十七期 B1 敏感层扩容（共享 setup 写两条偏好 + 四条两臂可分的敏感用例，
+# 分层口径回写见同表【口径回写 · 2026-09-06】块）。
+# 顺序即执行顺序：preference-inject-setup 必须先于四条依赖它的用例。
 # 增删走回写通道，不在脚本里悄悄改。
 PREFERENCE_PRESET_IDS = (
     "memory-write",
@@ -70,6 +73,11 @@ PREFERENCE_PRESET_IDS = (
     "preference-conflict-cheapest-vs-dislike",
     "memory-forget-setup",
     "memory-forget",
+    "preference-inject-setup",
+    "preference-inject-multi",
+    "preference-cross-category",
+    "preference-like-drives-choice",
+    "preference-round-override",
 )
 
 # 臂语义（写反 = 整轮读数方向反）：A=注入关、B=注入开
@@ -146,6 +154,22 @@ def select_replay_cases(cases: list[dict], only: str | None = None) -> list[dict
         selected_ids = [cid for cid in PREFERENCE_PRESET_IDS if cid in wanted]
     if not selected_ids:
         raise SystemExit("选出的用例集为空——0 条用例的回放是假跑")
+    # requires 覆盖守卫（烧前审查建议项）：选中依赖者而漏选前置 = 后继用例
+    # 评一个不成立的前提（memory-recall 漏掉 memory-write 的同族事故），
+    # 而分数看上去完全正常。requires 在任何执行路径都不会被自动补跑
+    # （build_execution_plan 只当元数据携带），所以必须在这里拦。
+    selected_set = set(selected_ids)
+    orphaned = {
+        req
+        for cid in selected_ids
+        for req in (cases_by_id[cid].get("requires") or [])
+        if req not in selected_set
+    }
+    if orphaned:
+        raise SystemExit(
+            f"选中的用例声明了不在本轮的前置（requires 不会被自动补跑，"
+            f"--only 要把前置一并带上）：{'、'.join(sorted(orphaned))}"
+        )
     return [cases_by_id[cid] for cid in selected_ids]
 
 

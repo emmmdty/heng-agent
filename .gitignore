@@ -27,3 +27,5 @@ eval/mem-partial-*.json
 eval/mem-run-*.json
 eval/mem-report-*.md
 eval/mem-deposit-*.json
+# Skill 线产物（二十七期 #14 任务 C）：skill- 前缀分桶，与 ab-*/mem-* 同纪律不入库
+eval/skill-*
