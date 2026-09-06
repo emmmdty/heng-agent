@@ -27,15 +27,36 @@ from app.domain.buyer.deposit import MemoryDeposit, VerificationResult, build_ve
 
 REMEMBER_TOOL = "remember_preference_tool"
 
-# 先导档预登记：触发用例 → 验证下游用例（沉淀改变的行为在哪个用例里显形）
+# 先导档预登记：触发用例 → 验证下游用例（沉淀改变的行为在哪个用例里显形）。
+# preference-conflict 是会话内自写自用（第 1 轮写、第 2 轮推荐），下游 = 本用例
+# 自己（on/off 是两次独立执行，对照仍成立）；memory-forget 链的撤回语义
+# （撤回后旧行为应恢复）与验证器方向相反，留 M3 回写后再接。
 DOWNSTREAM_CASE = {
     "memory-write": "memory-recall",
+    "preference-conflict-cheapest-vs-dislike": "preference-conflict-cheapest-vs-dislike",
 }
 
 # 商品库事实（cases.yaml preference-conflict 注释）：Voyager 旅行三件套记忆棉款
-# （涤纶外套）是商品库里唯一的塑料纤维旅行套装——dislike 注入生效的结果口径判定
-# 就盯它：注入开后推荐里不得出现。
+# （涤纶外套）是商品库里唯一的塑料纤维旅行套装——dislike 注入生效的遵从判定
+# 就盯它。材质事实词取自商品库属性（确定性），不是猜测。
 DISLIKE_PRODUCT_KEYWORD = "Voyager"
+DISLIKE_MATERIAL_MARKERS = ("涤纶", "化纤", "塑料")
+
+# 冲突说明的连接语（2026-09-06 用户裁量的两级判定口径）：材质事实 + 把选择权
+# 交回买家的话，两样齐才算"显式说明"；中性词（"如果"）单挑不算。
+DISLIKE_CHOICE_MARKERS = ("没意见", "不介意", "介意", "偏好", "冲突", "避开", "慎选")
+MAIN_REC_MARKERS = ("最推荐", "首推", "主推", "综合来看", "综合推荐")
+
+
+def _dislike_verifier_spec() -> dict:
+    return {
+        "kind": "recommendation_compliance",
+        "product": DISLIKE_PRODUCT_KEYWORD,
+        "material_markers": list(DISLIKE_MATERIAL_MARKERS),
+        "choice_markers": list(DISLIKE_CHOICE_MARKERS),
+        "main_rec_markers": list(MAIN_REC_MARKERS),
+        "require_contrast": True,
+    }
 
 
 def extract_remember_calls(session_id: str, data_dir: str | Path) -> list[dict]:
@@ -86,16 +107,12 @@ def build_deposit(case_id: str, buyer_id: str, session_id: str, write: dict) -> 
     write_kind = write["kind"]
     statement = write["statement"]
     if write_kind == "dislike":
-        verifier_spec = {
-            "kind": "product_presence",
-            "product": DISLIKE_PRODUCT_KEYWORD,
-            "expect_on": False,
-            "require_contrast": True,
-        }
+        verifier_spec = _dislike_verifier_spec()
         precondition = f"买家询问会命中「{DISLIKE_PRODUCT_KEYWORD}」所在品类的商品时"
         assertion = (
-            f"注入开后推荐结果不含「{DISLIKE_PRODUCT_KEYWORD}」（它命中偏好「{statement}」）；"
-            "注入关无此约束——两臂在该商品上出现差异才算这条偏好改变了行为"
+            f"两级遵从判定（2026-09-06 裁量口径）：注入开的主推荐不得是「{DISLIKE_PRODUCT_KEYWORD}」，"
+            f"且它出现处必须伴随材质冲突说明（材质事实+交还选择权）；注入关按同一判据应判违规——"
+            "两臂判定不同才算这条偏好改变了行为"
         )
     elif write_kind == "like":
         verifier_spec = {

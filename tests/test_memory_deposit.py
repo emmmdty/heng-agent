@@ -20,6 +20,7 @@ from app.domain.buyer.deposit import (
     MemoryDeposit,
     PreferenceMentionVerifier,
     ProductPresenceVerifier,
+    RecommendationComplianceVerifier,
     VerificationResult,
     build_verifier,
 )
@@ -99,6 +100,16 @@ class TestBuildVerifier:
         verifier = build_verifier({"kind": "preference_mention", "keywords": ["不要塑料", "塑料过敏"]})
         assert isinstance(verifier, PreferenceMentionVerifier)
 
+    def test_builds_recommendation_compliance(self):
+        verifier = build_verifier({
+            "kind": "recommendation_compliance",
+            "product": "Voyager",
+            "material_markers": ["涤纶"],
+            "choice_markers": ["没意见"],
+            "main_rec_markers": ["最推荐"],
+        })
+        assert isinstance(verifier, RecommendationComplianceVerifier)
+
     def test_unknown_kind_raises_with_name(self):
         with pytest.raises(ValueError) as err:
             build_verifier({"kind": "vibes"})
@@ -109,6 +120,8 @@ class TestBuildVerifier:
             build_verifier({"kind": "product_presence"})
         with pytest.raises(ValueError):
             build_verifier({"kind": "preference_mention", "keywords": []})
+        with pytest.raises(ValueError):
+            build_verifier({"kind": "recommendation_compliance", "product": "Voyager"})
 
 
 class TestProductPresenceVerifier:
@@ -151,6 +164,96 @@ class TestProductPresenceVerifier:
     def test_expect_on_true_passes_when_present_on_only(self):
         verifier = ProductPresenceVerifier(product="Nomadica", expect_on=True, require_contrast=True)
         assert verifier.check("[Agent] 推荐 Nomadica", "[Agent] 推荐 Voyager").ok
+
+
+class TestRecommendationComplianceVerifier:
+    """两级判定（2026-09-06 用户裁量，对齐 cases.yaml preference-conflict 先例）：
+
+    ① 主推荐不得是 dislike 命中的商品；② 该商品出现处必须伴随材质冲突说明
+    （材质事实词 + 把选择权交回买家的话，两样齐才算"显式说明"）。
+    测试形态按 M1 复跑两臂 transcript 的真实结构造（markdown 分节）。
+    """
+
+    _SPEC = {
+        "product": "Voyager",
+        "material_markers": ["涤纶", "化纤"],
+        "choice_markers": ["没意见", "介意", "偏好", "冲突", "避开", "慎选"],
+        "main_rec_markers": ["最推荐", "首推", "综合来看", "主推"],
+    }
+
+    def _verifier(self, **overrides) -> RecommendationComplianceVerifier:
+        return RecommendationComplianceVerifier(**{**self._SPEC, **overrides})
+
+    # ---- 臂 B 形态（M1 实测）：主推荐 Nomadica + Voyager 备选带材质说明 → 合规
+    _ARM_B_ON = """### ① Nomadica 旅行三件套 ⭐ 首推
+帆布+再生尼龙，你之前偏好避开塑料，这款完全契合。
+
+### 备选：Voyager 旅行三件套 记忆棉款
+| 材质 | 记忆棉 + 涤纶外套 |
+> **说明**：但外套为涤纶（化纤），不属于帆布/天然材质那档。如果你对涤纶没意见，这款性价比更高。
+
+**综合来看，最推荐 Nomadica 军绿色款**。"""
+
+    # ---- 臂 A 形态（M1 实测）：Voyager 平级列出，只有材质表格行、无冲突连接语 → 违规
+    _ARM_A_OFF = """### ① Nomadica 旅行三件套
+帆布+再生尼龙是知识库点名的"非塑料"优选材质。
+
+### ② Voyager 旅行三件套 记忆棉款 —— 预算更友好
+| 材质 | 记忆棉 + 涤纶外套 |
+> **推荐理由**：如果颈枕舒适度是第一诉求，记忆棉的包裹感更好；价格入门，适合尝鲜。"""
+
+    def test_arm_b_shape_passes_and_arm_a_shape_violates(self):
+        """M1 复跑的两臂形态：注入开合规、注入关违规——注入效应量得出来。"""
+        verifier = self._verifier()
+        on_result = verifier._judge(self._ARM_B_ON)
+        off_result = verifier._judge(self._ARM_A_OFF)
+        assert on_result[0] is True, on_result[1]
+        assert off_result[0] is False, off_result[1]
+
+    def test_full_check_confirms_with_contrast(self):
+        result = self._verifier().check(
+            transcript_on=self._ARM_B_ON, transcript_off=self._ARM_A_OFF,
+        )
+        assert result.ok and "注入关" in result.detail
+
+    def test_main_recommendation_is_disliked_product_violates(self):
+        transcript = "### 推荐\n综合来看，最推荐 Voyager 记忆棉款，139 元。"
+        ok, detail = self._verifier()._judge(transcript)
+        assert not ok and "主推荐" in detail
+
+    def test_bare_mention_without_conflict_note_violates(self):
+        """产品列了、材质词也有（表格行），但没有把材质与偏好的冲突挑明 = 未说明。"""
+        transcript = "### ① Voyager 旅行三件套\n| 材质 | 记忆棉 + 涤纶外套 |\n价格 139 元，库存 60 件。"
+        ok, detail = self._verifier()._judge(transcript)
+        assert not ok and "未说明" in detail
+
+    def test_material_word_alone_is_not_a_conflict_note(self):
+        """只有材质事实（表格行有涤纶）没有交还选择权的话——不构成显式说明。
+        '如果'这类中性词不算连接语，防误放行。"""
+        transcript = "### ② Voyager 记忆棉款\n涤纶外套，舒适导向。适合尝鲜。"
+        ok, detail = self._verifier()._judge(transcript)
+        assert not ok
+
+    def test_product_absent_on_and_off_fails_contrast(self):
+        """两臂都没出现该商品 = 注入没改变行为——合规但无对比，不作数。"""
+        result = self._verifier().check(
+            transcript_on="### 推荐\n最推荐 Nomadica。", transcript_off="### 推荐\n最推荐 Nomadica。",
+        )
+        assert not result.ok and "注入" in result.detail
+
+    def test_product_removed_by_injection_passes(self):
+        """注入开彻底不提、注入关列了（裸列或说明都算）——行为被注入改变，确认。"""
+        result = self._verifier().check(
+            transcript_on="### 推荐\n最推荐 Nomadica。",
+            transcript_off=self._ARM_A_OFF,
+        )
+        assert result.ok
+
+    def test_no_main_rec_marker_falls_back_to_mention_check(self):
+        """没有主推荐结构词时，退化为逐处提及检查——裸列照样违规。"""
+        transcript = "Voyager 记忆棉款，139 元，适合尝鲜。"
+        ok, detail = self._verifier()._judge(transcript)
+        assert not ok and "未说明" in detail
 
 
 class TestPreferenceMentionVerifier:

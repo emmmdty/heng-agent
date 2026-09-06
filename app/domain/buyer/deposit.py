@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -108,6 +109,94 @@ class PreferenceMentionVerifier(DepositVerifier):
         return VerificationResult(ok=True, detail=f"仅注入开体现偏好（命中「{on_hit}」）")
 
 
+_HEADER_RE = re.compile(r"^\s*#{1,6}\s", re.MULTILINE)
+
+
+def _split_sections(transcript: str) -> list[str]:
+    """markdown 分节（按标题行切）；无标题时全文一节。
+
+    M1 实测两臂回复都是"### 商品名 → 表格/说明"的分节结构——冲突说明与
+    商品名是否同节，是"显式说明"判定的空间锚点。
+    """
+    cuts = [m.start() for m in _HEADER_RE.finditer(transcript)]
+    if not cuts:
+        return [transcript]
+    starts = [0] + cuts
+    ends = cuts + [len(transcript)]
+    return [transcript[a:b] for a, b in zip(starts, ends) if transcript[a:b].strip()]
+
+
+@dataclass(frozen=True)
+class RecommendationComplianceVerifier(DepositVerifier):
+    """两级偏好遵从判定（2026-09-06 用户裁量，对齐 cases.yaml
+    preference-conflict 先例"不得在未说明材质冲突的情况下直接作为推荐结果"）：
+
+    ① 主推荐（含主推荐结构词的节）不得是 dislike 命中的商品；
+    ② 该商品出现处必须伴随材质冲突说明——材质事实词与"把选择权交回买家"
+    的话（如"如果你对涤纶没意见"）**两样齐**才算显式说明；只有材质词
+    （表格行里的事实）不算，防裸列误放行。
+
+    对照注入开/关两份 transcript：注入开违规 → FAIL；两臂判定相同 →
+    注入未改变行为，不作数（contrast 纪律与 product_presence 一致）。
+    """
+
+    product: str
+    material_markers: tuple[str, ...]
+    choice_markers: tuple[str, ...]
+    main_rec_markers: tuple[str, ...]
+    require_contrast: bool = True
+
+    def _judge(self, transcript: str) -> tuple[bool, str]:
+        sections = _split_sections(transcript)
+        hit_sections = [s for s in sections if self.product in s]
+        if not hit_sections:
+            return True, f"未出现「{self.product}」"
+        for section in sections:
+            if self.product not in section:
+                continue
+            for marker in self.main_rec_markers:
+                if self._product_near_marker(section, marker):
+                    return False, f"主推荐命中「{self.product}」（「{marker}」邻近出现）"
+        bare = [
+            s for s in hit_sections
+            if not (
+                any(m in s for m in self.material_markers)
+                and any(m in s for m in self.choice_markers)
+            )
+        ]
+        if bare:
+            return False, f"「{self.product}」出现但未说明材质冲突（{len(bare)} 处）"
+        return True, f"「{self.product}」均伴随材质冲突说明"
+
+    def _product_near_marker(self, section: str, marker: str) -> bool:
+        """主推荐判定用邻近窗口（±15 字符，预登记的确定性启发）：
+        "最推荐 <商品>" / "<商品> 是最推荐的"是真实语形；而商品在别处被提及、
+        结论行推荐了别家（M1 实测臂 B 的收尾结构）不算主推荐命中。"""
+        window = 15
+        start = 0
+        while (idx := section.find(marker, start)) != -1:
+            nearby = section[max(0, idx - window):idx + len(marker) + window]
+            if self.product in nearby:
+                return True
+            start = idx + len(marker)
+        return False
+
+    def check(self, transcript_on: str, transcript_off: str) -> VerificationResult:
+        on_ok, on_detail = self._judge(transcript_on)
+        off_ok, off_detail = self._judge(transcript_off)
+        if not on_ok:
+            return VerificationResult(ok=False, detail=f"注入开违规：{on_detail}")
+        if self.require_contrast and on_ok == off_ok:
+            return VerificationResult(
+                ok=False,
+                detail=(
+                    f"两臂判定相同（都{'合规' if on_ok else '违规'}）——注入未改变行为，"
+                    f"无对比不作数（注入关：{off_detail}）"
+                ),
+            )
+        return VerificationResult(ok=True, detail=f"注入开{on_detail}；注入关{off_detail}")
+
+
 _VERIFIER_KINDS = {
     "product_presence": lambda spec: ProductPresenceVerifier(
         product=_non_empty_text(spec["product"], "product"),
@@ -116,6 +205,13 @@ _VERIFIER_KINDS = {
     ),
     "preference_mention": lambda spec: PreferenceMentionVerifier(
         keywords=_non_empty_keywords(spec["keywords"]),
+    ),
+    "recommendation_compliance": lambda spec: RecommendationComplianceVerifier(
+        product=_non_empty_text(spec["product"], "product"),
+        material_markers=_non_empty_keywords(spec["material_markers"]),
+        choice_markers=_non_empty_keywords(spec["choice_markers"]),
+        main_rec_markers=_non_empty_keywords(spec["main_rec_markers"]),
+        require_contrast=bool(spec.get("require_contrast", True)),
     ),
 }
 

@@ -16,10 +16,12 @@ import pytest
 
 from scripts.eval.mem_replay import (
     ARM_EXPECT,
+    CONTROL_ARM_EXPECT,
     PREFERENCE_PRESET_IDS,
     find_eval_preference_leftovers,
     preflight_arms,
     purge_eval_preference_leftovers,
+    seed_contradiction_preferences,
     select_replay_cases,
 )
 
@@ -169,3 +171,45 @@ class TestEvalPreferenceLeftovers:
         moved, backup_dir = purge_eval_preference_leftovers(tmp_path, stamp="s")
         assert moved == []
         assert backup_dir == ""
+
+
+class TestPositiveControl:
+    """阳性对照（矛盾注入臂，已知更差——工具有效性自证，模式照抄二十五期）。
+
+    给对照臂买家预写一条**取反偏好**（like 喜欢塑料材质），跑中写入用例再写
+    入真偏好 → 买家同时持有矛盾记忆 → 已知更差的记忆状态。纯数据层 seed，
+    与注入开关正交、零 app 改动；buyer id 按臂后缀隔离，seed 只影响对照臂。
+    """
+
+    def test_control_arm_expect_pinned(self):
+        """对照臂语义钉死：A=矛盾注入（已知更差，变体名含 weaker 供渲染器识别）、
+        B=正常注入。写反了自证读数方向就反了。"""
+        assert CONTROL_ARM_EXPECT["A"]["variant"] == "mem-weaker-contradiction"
+        assert CONTROL_ARM_EXPECT["B"]["variant"] == "mem-inject-on"
+
+    def test_seed_targets_arm_a_buyers_only(self, tmp_path):
+        cases = [
+            {"id": "memory-write", "buyer_id": "eval-memory-buyer", "queries": ["q"]},
+            {"id": "memory-recall", "buyer_id": "eval-memory-buyer", "queries": ["q"]},
+        ]
+        seeded = seed_contradiction_preferences(tmp_path, cases, k=2)
+        prefs = tmp_path / "preferences"
+        names = sorted(p.name for p in prefs.glob("*.json"))
+        assert names == ["eval-memory-buyer-abak0.json", "eval-memory-buyer-abak1.json"]
+        assert seeded == ["eval-memory-buyer-abak0", "eval-memory-buyer-abak1"]
+        payload = json.loads((prefs / "eval-memory-buyer-abak0.json").read_text(encoding="utf-8"))
+        assert payload[0]["kind"] == "like"
+        assert payload[0]["statement"] == "喜欢塑料材质"
+        assert payload[0]["buyer_id"] == "eval-memory-buyer-abak0"
+
+    async def test_seed_readable_by_preference_store(self, tmp_path):
+        """seed 文件必须能被服务的 JsonFilePreferenceStore 读出——schema 不兼容
+        的 seed = 对照臂静默回到无偏好态，自证轮白跑。"""
+        from app.infrastructure.persistence.json_file_stores import JsonFilePreferenceStore
+
+        cases = [{"id": "memory-recall", "buyer_id": "eval-memory-buyer", "queries": ["q"]}]
+        seed_contradiction_preferences(tmp_path, cases, k=1)
+        seed_contradiction_preferences(tmp_path, cases, k=1)  # 幂等
+        store = JsonFilePreferenceStore(tmp_path)
+        prefs = await store.list_by_buyer("eval-memory-buyer-abak0")
+        assert [(p.kind, p.statement) for p in prefs] == [("like", "喜欢塑料材质")]

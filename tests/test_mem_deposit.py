@@ -76,10 +76,10 @@ class TestBuildDeposit:
         deposit = build_deposit("memory-write", "b1", "s1", {
             "kind": "dislike", "statement": "不要塑料材质", "trigger_query": "q",
         })
-        assert deposit.verifier_spec["kind"] == "product_presence"
-        assert deposit.verifier_spec["expect_on"] is False
+        assert deposit.verifier_spec["kind"] == "recommendation_compliance"
+        assert deposit.verifier_spec["product"] == "Voyager"
         assert deposit.verifier_spec["require_contrast"] is True
-        assert "Voyager" in deposit.assertion
+        assert "两级遵从判定" in deposit.assertion
         assert deposit.deposit_id  # session 在构造前补齐 → id 按真实会话派生
 
     def test_like_write_gets_mention_verifier(self):
@@ -135,8 +135,8 @@ class TestVerifyAgainstRun:
         assert stored[0].statement == "不要塑料材质"
 
     def test_no_contrast_is_not_confirmed(self, tmp_path: Path):
-        """两臂都没出现 Voyager = 注入没有改变该行为面——沉淀不确认、不入库
-        （留名）。期望本身满足（注入开不含），缺的是与注入关的对比。"""
+        """两臂判定相同（都没出现该商品）= 注入没有改变行为——沉淀不确认、
+        不入库（留名）。合规本身不够，缺的是与注入关的对比。"""
         run = _run_json(
             tmp_path,
             on_transcript="[Agent] 推荐 Nomadica 帆布三件套（考虑到您不要塑料）",
@@ -146,7 +146,7 @@ class TestVerifyAgainstRun:
         store = DepositStore(data_dir=str(tmp_path))
         report = verify_against_run(run, tmp_path, store=store)
         assert report["n_behavior_confirmed"] == 0
-        assert "都不包含" in report["deposits"][0]["detail"]
+        assert "判定相同" in report["deposits"][0]["detail"]
         assert store.list_by_buyer("eval-memory-buyer-abBk0") == []
 
     def test_missing_downstream_product_recorded_not_crashed(self, tmp_path: Path):
