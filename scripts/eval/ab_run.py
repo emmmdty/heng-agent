@@ -847,7 +847,13 @@ async def run_ab_pipeline(
         "cost_latency": cost_latency,
         "notes": report_payload["notes"],
     }, ensure_ascii=False, indent=2), encoding="utf-8")
-    if judge_valid:
+    # 断点删除的前提：判段**干净**（judge_valid 且零 error 行）。
+    # B2 认证轮实测事故（2026-09-06）：70/80 对 judge 429 烧成 error 行，
+    # error 不进互换分母 → 剩 10 对 rate=0.9 恰好"达标" → judge_valid=True
+    # → 新旧断点全删——可重判的执行段资产在废轮里陪葬（靠最终 run JSON 手工
+    # 捞回）。error 对占比是另一维的"有效"，swap rate 覆盖不了它：宁可多留
+    # 一个断点文件，不丢可重判的执行段（与"宁可少一对，不进假读数"同族）。
+    if judge_valid and not any(r.get("error_ab") or r.get("error_ba") for r in rows):
         if resume_path is None or resume_path.resolve() != partial_path.resolve():
             partial_path.unlink(missing_ok=True)
         if resume_path is not None:

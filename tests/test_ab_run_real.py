@@ -560,6 +560,72 @@ class TestRunAbPipeline:
         with pytest.raises(SystemExit):
             await self._pipeline(tmp_path, [_case("c1")], resume_path=partial)
 
+    async def test_resume_partial_survives_error_ridden_judging(self, tmp_path):
+        """B2 认证轮实测事故（2026-09-06，周额度耗尽）：80 对里 70 对 judge
+        429 烧成 error 行——error 不进互换分母，剩 10 对 9 一致 → rate=0.9
+        恰好"达标"，管线判 judge_valid=True 把新旧断点全删了。执行段 160 执行
+        的可重判资产差点陪葬（靠最终 run JSON 手工捞回）。
+
+        钉死：判段存在 error 行时，无论 swap rate 多少，resume_path 与
+        新 partial 一律保留——断点删除的前提是判段干净（n_error == 0）。"""
+        partial = tmp_path / "ab-partial-earlier.json"
+        partial.write_text(json.dumps({
+            "label": "测试", "pairing": "diagonal",
+            "plan": {"k": 1, "pairing": "diagonal",
+                     "case_ids": [f"c{i}" for i in range(1, 11)]},
+            "arm_config": self._arm_config(),
+            "results": [
+                {"case_id": f"c{i}", "arm": arm, "sample_index": 0,
+                 "session_id": f"s-{arm}{i}", "transcript": f"T-{arm}-{i}",
+                 "ok": True, "error": ""}
+                for i in range(1, 11) for arm in ("A", "B")
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        def factory(model):
+            async def judge_call(prompt):
+                # 复刻事故形态：一半的对整体失败（两序都 429 → error 对，
+                # 不进互换分母），剩余对全部一致 → rate 靠小分母"达标"。
+                import re
+                found = re.search(r"T-A-(\d+)", prompt)
+                case_num = int(found.group(1)) if found else -1
+                if case_num % 2 == 0:
+                    raise RuntimeError("Error code: 429")
+                return "裁决: 平局\n理由: 相当"
+            return judge_call
+
+        cases = [_case(f"c{i}") for i in range(1, 11)]  # 10 对：5 对整体失败
+        await self._pipeline(
+            tmp_path, cases, judge_factory=factory,
+            resume_path=partial,
+        )
+        assert partial.exists(), "resume 断点被误删——error 轮不许弃断点"
+        assert (tmp_path / "ab-partial-20260905-170000.json").exists(), \
+            "本轮 partial 也被误删——明天重判要靠它"
+
+    async def test_clean_judging_still_deletes_partials(self, tmp_path):
+        """对照：判段干净（零 error）时删除断点的既有行为不变。"""
+        partial = tmp_path / "ab-partial-earlier.json"
+        partial.write_text(json.dumps({
+            "label": "测试", "pairing": "diagonal",
+            "plan": {"k": 1, "pairing": "diagonal", "case_ids": ["c1", "c2"]},
+            "arm_config": self._arm_config(),
+            "results": [
+                {"case_id": "c1", "arm": "A", "sample_index": 0, "session_id": "sA",
+                 "transcript": "T-A", "ok": True, "error": ""},
+                {"case_id": "c1", "arm": "B", "sample_index": 0, "session_id": "sB",
+                 "transcript": "T-B", "ok": True, "error": ""},
+                {"case_id": "c2", "arm": "A", "sample_index": 0, "session_id": "s2A",
+                 "transcript": "T2-A", "ok": True, "error": ""},
+                {"case_id": "c2", "arm": "B", "sample_index": 0, "session_id": "s2B",
+                 "transcript": "T2-B", "ok": True, "error": ""},
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        await self._pipeline(tmp_path, [_case("c1"), _case("c2")], resume_path=partial)
+        assert not partial.exists()
+        assert not (tmp_path / "ab-partial-20260905-170000.json").exists()
+
     async def test_dual_judge_subset_measured(self, tmp_path):
         def factory(model):
             async def judge_call(prompt):
