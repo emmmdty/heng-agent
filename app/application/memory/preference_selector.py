@@ -18,12 +18,23 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from typing import Optional, Sequence
 
 from app.domain.buyer.preference import BuyerPreference
 from app.domain.catalog.ports.retrieval_ports import EmbeddingClient
 
 logger = logging.getLogger(__name__)
+
+# 记忆注入 kill switch（#12 回放对照，M0-b）：臂 A 注入关、臂 B 开。
+# select() 是主 Agent（orchestrator._build_inputs）与检索子 Agent
+# （task_dispatch_tool._preference_hint）两个注入面的公共漏斗，在这里关 =
+# 一处开关覆盖全部注入，两个调用方对空选中集本来就不注入，无需改调用侧。
+# 直读 env 而不进 settings 是二十六期改动面红线的妥协（settings.py /
+# composition.py 归 #14 线，B 线不碰）；#14 合流后可挪进 settings 接线。
+# 取值约定同 settings.py：不在 ("0", "false", "False") 内即视为开，缺省开——
+# 对齐全仓惯例，操作者写 =true 才不会静默跑成 A/A。
+_INJECTION_ENV = "PREFERENCE_INJECTION_ENABLED"
 
 
 def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
@@ -67,11 +78,16 @@ class PreferenceSelector:
         self,
         embedder: Optional[EmbeddingClient] = None,
         relevance_enabled: bool = False,
+        injection_enabled: bool = True,
     ) -> None:
         self._embedder = embedder
         # 开关关闭（或没有 embedder）时退化为「按时间倒序取 top_k」：
         # 零额外调用、确定性，无凭据的 CI 也能跑
         self._relevance_enabled = relevance_enabled and embedder is not None
+        # 显式禁用优先于 env——env 只管默认态，构造参数是代码级的一锤定音
+        self._injection_enabled = injection_enabled and (
+            os.getenv(_INJECTION_ENV, "1") not in ("0", "false", "False")
+        )
 
     async def select(
         self,
@@ -79,8 +95,11 @@ class PreferenceSelector:
         query: str,
         top_k: int,
     ) -> list[BuyerPreference]:
-        """返回本轮应注入的偏好，保持「dislike 在前、like 在后」的稳定顺序。"""
-        if not preferences:
+        """返回本轮应注入的偏好，保持「dislike 在前、like 在后」的稳定顺序。
+
+        注入开关关闭时返回空列表：记忆层整体不参与本轮（回放对照臂 A 的语义），
+        不做任何 embedding 调用。"""
+        if not preferences or not self._injection_enabled:
             return []
 
         dislikes = [p for p in preferences if p.kind == "dislike"]

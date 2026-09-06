@@ -605,13 +605,15 @@ async def run_ab_pipeline(
     votes: int = 1,
     judge_concurrency: int = 1,
     judge_client: httpx.AsyncClient | None = None,
+    product_prefix: str = "ab",
 ) -> dict:
     """A/B 真实跑测三段管线：执行 → 配对判 → 统计与报告。
 
-    产物三件套（都在 eval_dir，ab- 前缀分桶）：
-      - ab-partial-{stamp}.json：逐样本落盘（整份重写），跑完并出报告后删除；
-      - ab-run-{stamp}.json：机器可读（执行产物 + 判行 + 统计 + 两臂配置）；
-      - ab-report-{stamp}.md：人读报告（render_ab_report 渲染）。
+    产物三件套（都在 eval_dir，{product_prefix}- 前缀分桶；缺省 ab-，
+    #12 记忆回放传 "mem"——ab-*/mem-* 分桶纪律见二十六期任务书纪律 8）：
+      - {prefix}-partial-{stamp}.json：逐样本落盘（整份重写），跑完并出报告后删除；
+      - {prefix}-run-{stamp}.json：机器可读（执行产物 + 判行 + 统计 + 两臂配置）；
+      - {prefix}-report-{stamp}.md：人读报告（render_ab_report 渲染）。
 
     execute_fn / judge_factory 是注入点：测试用假件零 LLM 走通全链，
     真实路径用 execute_ab_case / make_judge_call——接线只有这一处。
@@ -654,7 +656,7 @@ async def run_ab_pipeline(
     completed = {triple_key(r["case_id"], r["arm"], r["sample_index"]) for r in results}
     pending = partition_pending(build_execution_plan(cases, k), completed)
 
-    partial_path = eval_dir / f"ab-partial-{stamp}.json"
+    partial_path = eval_dir / f"{product_prefix}-partial-{stamp}.json"
 
     def _write_partial() -> None:
         partial_path.write_text(json.dumps({
@@ -824,9 +826,9 @@ async def run_ab_pipeline(
         )
     report_text = render_ab_report(report_payload)
 
-    report_path = eval_dir / f"ab-report-{stamp}.md"
+    report_path = eval_dir / f"{product_prefix}-report-{stamp}.md"
     report_path.write_text(report_text, encoding="utf-8")
-    run_json_path = eval_dir / f"ab-run-{stamp}.json"
+    run_json_path = eval_dir / f"{product_prefix}-run-{stamp}.json"
     run_json_path.write_text(json.dumps({
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "label": label, "pairing": pairing, "stamp": stamp,

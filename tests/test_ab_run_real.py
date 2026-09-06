@@ -429,7 +429,7 @@ class TestRunAbPipeline:
 
     async def _pipeline(self, tmp_path, cases, k=1, *, judge_factory=None, second_judge_model="",
                         dual_judge_pairs=0, resume_path=None, execute_fn=None, fail=(),
-                        seconds_per_intent=None):
+                        seconds_per_intent=None, product_prefix="ab"):
         from scripts.eval.ab_run import run_ab_pipeline
 
         if execute_fn is None:
@@ -459,9 +459,18 @@ class TestRunAbPipeline:
             label="测试", judge_factory=judge_factory,
             second_judge_model=second_judge_model, dual_judge_pairs=dual_judge_pairs,
             resume_path=resume_path, execute_fn=execute_fn, progress=progress.append,
-            seconds_per_intent=seconds_per_intent,
+            seconds_per_intent=seconds_per_intent, product_prefix=product_prefix,
         )
         return payload, progress
+
+    async def test_product_prefix_names_outputs(self, tmp_path):
+        """#12 记忆回放复用本管线：产物前缀可换（mem-*），分桶互不覆盖。
+
+        缺省 ab- 不变——二十五期既有产物命名与全部既有测试不受影响。"""
+        await self._pipeline(tmp_path, [_case("c1")], product_prefix="mem")
+        assert (tmp_path / "mem-report-20260905-170000.md").exists()
+        run_json = json.loads((tmp_path / "mem-run-20260905-170000.json").read_text(encoding="utf-8"))
+        assert run_json["plan"]["pairs"] == 1
 
     async def test_eval_dir_created_when_missing(self, tmp_path):
         """产物目录不存在时自动创建——第一轮真实跑测就栽在它手上（mock 演练发现）。"""

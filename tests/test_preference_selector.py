@@ -185,3 +185,65 @@ class TestEdgeCases:
         preferences = [_pref("dislike", "不要塑料材质", "2026-01-01")]
         selected = await PreferenceSelector().select(preferences, query="q", top_k=5)
         assert _statements(selected) == ["不要塑料材质"]
+
+
+class TestInjectionSwitch:
+    """记忆注入 kill switch（#12 回放对照，M0-b）：臂 A 注入关、臂 B 开。
+
+    select() 是主 Agent（orchestrator）与检索子 Agent（task_dispatch_tool）
+    两个注入面的公共漏斗，在这里关 = 一处开关覆盖全部注入；两处调用方对
+    空选中集本来就都不注入，不需要改调用侧。默认开 = 现行为零变化。
+    """
+
+    _PREFERENCES = [
+        _pref("dislike", "不要塑料材质", "2026-01-01"),
+        _pref("like", "喜欢小众设计", "2026-01-02"),
+    ]
+
+    async def test_disabled_selector_selects_nothing_even_dislikes(self):
+        """注入关时连 dislike 也不注入——黑名单底线约束的是『注入了但被截断』，
+        不是『注入通道整体关闭』；关注入 = 记忆层不参与本轮，语义是全量。"""
+        selector = PreferenceSelector(injection_enabled=False)
+        assert await selector.select(self._PREFERENCES, query="推荐个咖啡杯", top_k=5) == []
+
+    async def test_env_zero_disables(self, monkeypatch):
+        monkeypatch.setenv("PREFERENCE_INJECTION_ENABLED", "0")
+        selector = PreferenceSelector()
+        assert await selector.select(self._PREFERENCES, query="q", top_k=5) == []
+
+    async def test_env_unset_defaults_on(self, monkeypatch):
+        monkeypatch.delenv("PREFERENCE_INJECTION_ENABLED", raising=False)
+        selector = PreferenceSelector()
+        selected = await selector.select(self._PREFERENCES, query="q", top_k=5)
+        assert _statements(selected) == ["不要塑料材质", "喜欢小众设计"]
+
+    async def test_env_one_enables(self, monkeypatch):
+        monkeypatch.setenv("PREFERENCE_INJECTION_ENABLED", "1")
+        selector = PreferenceSelector()
+        selected = await selector.select(self._PREFERENCES, query="q", top_k=5)
+        assert _statements(selected) == ["不要塑料材质", "喜欢小众设计"]
+
+    async def test_env_truthy_enables_like_settings_convention(self, monkeypatch):
+        """取值约定对齐 settings.py（not in ("0","false","False") 即开）：
+        操作者按全仓惯例写 =true 不会静默跑成 A/A。"""
+        monkeypatch.setenv("PREFERENCE_INJECTION_ENABLED", "true")
+        selector = PreferenceSelector()
+        selected = await selector.select(self._PREFERENCES, query="q", top_k=5)
+        assert _statements(selected) == ["不要塑料材质", "喜欢小众设计"]
+
+    async def test_env_false_variants_disable(self, monkeypatch):
+        for value in ("false", "False"):
+            monkeypatch.setenv("PREFERENCE_INJECTION_ENABLED", value)
+            selector = PreferenceSelector()
+            assert await selector.select(self._PREFERENCES, query="q", top_k=5) == []
+
+    async def test_env_cannot_override_explicit_param(self, monkeypatch):
+        """构造参数显式关 + env 开 → 仍关：显式禁用优先，env 只管默认态。"""
+        monkeypatch.setenv("PREFERENCE_INJECTION_ENABLED", "1")
+        selector = PreferenceSelector(injection_enabled=False)
+        assert await selector.select(self._PREFERENCES, query="q", top_k=5) == []
+
+    async def test_disabled_does_not_call_embedder(self):
+        """关注入连相关性排序都不该跑——零额外调用。"""
+        selector = PreferenceSelector(BrokenEmbeddingClient(), relevance_enabled=True, injection_enabled=False)
+        assert await selector.select(self._PREFERENCES, query="q", top_k=5) == []

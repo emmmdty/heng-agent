@@ -22,3 +22,7 @@ eval/ab-report-*.md
 eval/ab-judgeprobe-*.json
 # cross 重判分析产物（二十五期第 17 条）：复用执行产物重配对，同为跑测产物不入库
 eval/ab-crossrejudge-*.json
+# 记忆回放产物（二十六期 #12 任务 B）：mem- 前缀分桶，与 ab-* 同纪律不入库
+eval/mem-partial-*.json
+eval/mem-run-*.json
+eval/mem-report-*.md
