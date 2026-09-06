@@ -53,6 +53,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # judge 不经模型层闸门（直连 httpx），自己退避重试，避免主模型限流时整轮评测报废
 _JUDGE_MAX_RETRIES = 3
+# 单次尝试总耗时护栏（秒）：读超时按"收到字节的间隔"计，滴漏式响应能无限
+# 重置它——B2 认证轮首跑判段实测（2026-09-06）：额度耗尽期网关把 4 条连接
+# 挂住 28 分钟，无重试日志、无超时触发，事件循环空转。这个值必须大于
+# timeout=120 的读超时（正常慢调用不受影响），只兜"读超时被绕过"的悬挂。
+_JUDGE_ATTEMPT_DEADLINE_SECONDS = 240
 _JUDGE_RETRY_BASE_SECONDS = 8.0
 
 JUDGE_SYSTEM_PROMPT = """你是严格的电商 Agent 评测员。给你一段"买家多轮提问与 Agent 回复"的对话记录、
@@ -182,11 +187,14 @@ async def call_llm_with_retry(client: httpx.AsyncClient, payload: dict) -> str:
     last_error: Exception | None = None
     for attempt in range(_JUDGE_MAX_RETRIES):
         try:
-            response = await client.post(
-                f"{os.environ['LLM_BASE_URL'].rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {os.environ['LLM_API_KEY']}"},
-                json=payload,
-                timeout=120,
+            response = await asyncio.wait_for(
+                client.post(
+                    f"{os.environ['LLM_BASE_URL'].rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {os.environ['LLM_API_KEY']}"},
+                    json=payload,
+                    timeout=120,
+                ),
+                timeout=_JUDGE_ATTEMPT_DEADLINE_SECONDS,
             )
             response.raise_for_status()
             body = response.json()
@@ -204,6 +212,20 @@ async def call_llm_with_retry(client: httpx.AsyncClient, payload: dict) -> str:
                     "reasoning_content 是不可见思维链，不得当判词解析"
                 )
             return message["content"]
+        except asyncio.TimeoutError as err:
+            # wait_for 掐断 = 滴漏式悬挂（读超时被绕过）。asyncio.TimeoutError 的
+            # str() 是空的，is_transient_error 认不出——必须在这里转成带机制名
+            # 的错误再按瞬时重试，否则要么不重试、要么塌缩成无名异常。
+            named = RuntimeError(
+                f"judge 单次调用总耗时超 {_JUDGE_ATTEMPT_DEADLINE_SECONDS}s"
+                "（慢速悬挂防护，读超时未触发）——按瞬时错误处理"
+            )
+            if attempt == _JUDGE_MAX_RETRIES - 1:
+                raise named from err
+            last_error = named
+            delay = _JUDGE_RETRY_BASE_SECONDS * (2**attempt)
+            print(f"   judge 疑似悬挂，{delay:.0f}s 后重试：{named}", flush=True)
+            await asyncio.sleep(delay)
         except Exception as err:  # noqa: BLE001
             if not is_transient_error(err) or attempt == _JUDGE_MAX_RETRIES - 1:
                 raise

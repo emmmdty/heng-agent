@@ -11,6 +11,8 @@ execute_case（多轮对话执行，不含 rubric judge）是 A/B 每次采样�
 call_llm_with_retry / resolve_judge_model 是 judge 传输与模型解析的唯一一份
 实现：rubric 判分与 A/B 成对判分共用，不许两处各回退各的。
 """
+import asyncio
+
 import pytest
 
 import scripts.eval_regression as er
@@ -286,6 +288,35 @@ class TestCallLlmWithRetry:
         with pytest.raises(RuntimeError, match="content"):
             await er.call_llm_with_retry(client, {"model": "m"})
         assert client.calls == 1
+
+    class _HangingClient:
+        """慢速悬挂形态：post 永不返回。
+
+        B2 认证轮实测（2026-09-06，stamp 20260906-181716 首跑判段）：额度耗尽期
+        网关/代理把 4 条连接挂住 28 分钟——读超时（120s）按"收到的字节间隔"计，
+        滴漏式响应可无限重置它，超时护栏永远不触发，事件循环空转到天亮。
+        防线 = 单次尝试总耗时护栏（asyncio.wait_for），不依赖读超时。"""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def post(self, url, headers=None, json=None, timeout=None):
+            self.calls += 1
+            await asyncio.sleep(3600)
+
+    async def test_hanging_call_deadline_bounded_and_retried(self, monkeypatch):
+        """挂死调用在总耗时护栏处被掐断，按瞬时错误重试；重试耗尽报错留名。"""
+        monkeypatch.setattr(er, "_JUDGE_RETRY_BASE_SECONDS", 0.001)
+        monkeypatch.setattr(er, "_JUDGE_ATTEMPT_DEADLINE_SECONDS", 0.05)
+        client = self._HangingClient()
+        with pytest.raises(RuntimeError, match="总耗时"):
+            await er.call_llm_with_retry(client, {"model": "m"})
+        assert client.calls == er._JUDGE_MAX_RETRIES
+
+    async def test_fast_call_unaffected_by_deadline(self, monkeypatch):
+        """护栏只掐挂死的，不碰正常调用（FlakyClient 秒回照常成功）。"""
+        client = self._FlakyClient(failures=1)
+        assert await er.call_llm_with_retry(client, {"model": "m"}) == "你好"
 
 
 class TestFaultClearVisibility:
