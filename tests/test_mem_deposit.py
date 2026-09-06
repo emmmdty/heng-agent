@@ -101,6 +101,10 @@ def _run_json(tmp_path: Path, *, on_transcript: str, off_transcript: str, data_d
     _session_file(data_dir, write_session, "eval-memory-buyer-abBk0", _write_events())
     return {
         "healths": {"A": {"data_dir": str(data_dir)}, "B": {"data_dir": str(data_dir)}},
+        "arm_config": {
+            "A": {"fingerprint": "a0915fac", "variant": "mem-inject-off", "model": "mimo-v2.5"},
+            "B": {"fingerprint": "a0915fac", "variant": "mem-inject-on", "model": "mimo-v2.5"},
+        },
         "results": [
             {"case_id": "memory-write", "arm": "B", "sample_index": 0,
              "session_id": write_session, "transcript": "已记住", "ok": True, "error": ""},
@@ -155,6 +159,15 @@ class TestVerifyAgainstRun:
         report = verify_against_run(run, tmp_path)
         assert report["deposits"][0]["ok"] is False
         assert "缺失" in report["deposits"][0]["detail"]
+
+    def test_control_round_product_is_rejected(self, tmp_path):
+        """阳性对照轮的臂 A 是矛盾注入臂（不是注入关臂）——喂给沉淀验证
+        会把矛盾臂当'注入关'基线，对账语义整个错位。必须报错拦下。"""
+        run = _run_json(tmp_path, on_transcript="x", off_transcript="y", data_dir=tmp_path)
+        run["arm_config"]["A"]["variant"] = "mem-weaker-contradiction"
+        with pytest.raises(SystemExit) as err:
+            verify_against_run(run, tmp_path)
+        assert "对照" in str(err.value) or "mem-inject-off" in str(err.value)
 
     def test_unverifiable_write_aborts(self, tmp_path: Path):
         """没有预登记验证器形态的写入 = 写入门被绕过，管线缺陷直接炸。"""

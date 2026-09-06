@@ -180,13 +180,22 @@ def _buyer_from_session(session_id: str, data_dir: str | Path) -> str:
 def verify_against_run(
     run_json: dict, data_dir: str | Path, store: DepositStore | None = None,
 ) -> dict:
-    """    跑测产物 → 沉淀提取（**只取臂 B**——注入开臂才是记忆自进化闭环所在，
+    """跑测产物 → 沉淀提取（**只取臂 B**——注入开臂才是记忆自进化闭环所在，
     臂 A 是注入关的反事实基线，它的写入不参与对账）+ 逐条验证 + 入库。
     返回对账账本（也供落盘）。
+
+    只认标准注入对照轮（臂 A 变体 = mem-inject-off）：阳性对照轮的臂 A 是
+    矛盾注入臂，拿它当"注入关"基线，对账语义整个错位——必须拦下。
 
     可验证率的口径：每条沉淀都必须有确定性验证器且真的跑过——验证器跑不了
     的沉淀在写入门就该被拒，出现在这里是管线缺陷，直接把 rate 打穿报错。
     """
+    arm_variant = str(((run_json.get("arm_config") or {}).get("A") or {}).get("variant") or "")
+    if arm_variant != "mem-inject-off":
+        raise SystemExit(
+            f"该产物不是标准注入对照轮（臂 A 变体 = {arm_variant!r}，应为 mem-inject-off）——"
+            "阳性对照轮的臂 A 是矛盾注入臂，沉淀验证语义不适用，别喂对照轮产物"
+        )
     executions = [
         r for r in (run_json.get("results") or [])
         if r.get("ok") and r.get("arm") == "B" and r.get("case_id") in DOWNSTREAM_CASE
@@ -267,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
             "先查两臂起服配置（记忆回放要求两臂共用仓库 data/）"
         )
     data_dir = next(iter(data_dirs), args.data_dir)
-    report = verify_against_run(run_json, data_dir)
+    report = verify_against_run(run_json, data_dir, store=DepositStore(data_dir=data_dir))
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = Path(args.run_json).parent / f"mem-deposit-{stamp}.json"
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
