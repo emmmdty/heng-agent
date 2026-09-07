@@ -222,8 +222,7 @@ class TestRetryLayersAreCollapsed:
     回归的是一个乘积放大缺陷：openai SDK（默认 2）、AgentScope（默认 3）与本仓
     `ThrottledChatModel`（LLM_MAX_RETRIES）三层重试各自为政，一次逻辑调用在持续
     失败时会打出 3×4×3 = 36 个上游请求。对一个以「网关配额治理」为核心卖点的系统，
-    这是自相矛盾的：GatewayThrottle 在前门限并发与间隔，底下两层却背着它疯狂重发，
-    而且恰恰发生在网关已经限流的时刻——最该退让时反而放大了压力。
+    这是自相矛盾的：GatewayThrottle 在前门限并发与间隔，底下两层却背着它疯狂重发，    而且恰恰发生在网关已经限流的时刻——最该退让时反而放大了压力。
     """
 
     async def test_lower_layers_do_not_retry(self, tmp_path):
@@ -249,4 +248,34 @@ class TestRetryLayersAreCollapsed:
         )
         assert total == settings.llm_max_retries + 1, (
             f"上游请求数 {total} != 声明的 {settings.llm_max_retries + 1}，重试层没收口"
+        )
+
+
+class TestOpenCodeSessionHeader:
+    """网关 Console Go 路由要求 x-opencode-session 稳定会话头
+    （2026-09-07 起 deepseek/mimo 路径 400 MissingSessionID 实锤）：
+    create_chat_model 产出的模型（含 fallback）底层 openai 客户端必须
+    带进程级稳定会话 ID。"""
+
+    async def test_chat_model_client_sends_session_header(self, tmp_path):
+        from app.infrastructure.llm import create_chat_model
+
+        settings = _build_settings(tmp_path)
+        model = create_chat_model(settings, stream=False)
+        headers = model.client.default_headers
+        assert headers.get("x-opencode-session"), "缺少 x-opencode-session 会话头"
+
+    async def test_session_header_stable_within_process(self, tmp_path):
+        from app.infrastructure.llm import (
+            _OPENCODE_SESSION_ID,
+            create_chat_model,
+        )
+
+        settings = _build_settings(tmp_path)
+        first = create_chat_model(settings, stream=False)
+        second = create_chat_model(settings, stream=False)
+        assert (
+            first.client.default_headers.get("x-opencode-session")
+            == second.client.default_headers.get("x-opencode-session")
+            == _OPENCODE_SESSION_ID
         )

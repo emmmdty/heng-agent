@@ -20,6 +20,7 @@ import asyncio
 import inspect
 import logging
 import sys
+import uuid
 from typing import Any, AsyncGenerator, Optional
 
 from agentscope.credential import OpenAICredential
@@ -35,6 +36,9 @@ from app.infrastructure.throttle import GatewayThrottle
 from app.infrastructure.transient import is_transient_error
 
 logger = logging.getLogger(__name__)
+
+# 网关会话 ID：进程级稳定，见 create_chat_model 内注释。
+_OPENCODE_SESSION_ID = uuid.uuid4().hex
 
 
 class ThrottledChatModel(OpenAIChatModel):
@@ -369,7 +373,13 @@ def create_chat_model(
         # 把下面两层都关到 0，重试与退避只由本层做，且回退与 model.fallback 事件
         # 也只在本层触发，行为可预期、可观测。
         "max_retries": 0,
-        "client_kwargs": {"max_retries": 0},
+        # 网关 Console Go 路由要求客户端带稳定会话 ID（2026-09-07 起
+        # deepseek/mimo 路径 400 MissingSessionID 实锤）：进程级生成一次，
+        # 同进程所有模型调用共用——对网关是"同一段会话"，利于其路由与提示缓存。
+        "client_kwargs": {
+            "max_retries": 0,
+            "default_headers": {"x-opencode-session": _OPENCODE_SESSION_ID},
+        },
     }
     fallback = (
         OpenAIChatModel(model=settings.llm_fallback_model, **common)

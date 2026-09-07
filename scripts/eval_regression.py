@@ -58,6 +58,10 @@ _JUDGE_MAX_RETRIES = 3
 # 挂住 28 分钟，无重试日志、无超时触发，事件循环空转。这个值必须大于
 # timeout=120 的读超时（正常慢调用不受影响），只兜"读超时被绕过"的悬挂。
 _JUDGE_ATTEMPT_DEADLINE_SECONDS = 240
+# 网关 Console Go 路由要求客户端带稳定会话 ID（2026-09-07 起 deepseek 路径
+# 400 MissingSessionID 实锤，docs/go/#where-can-i-use-it）：进程级生成一次，
+# 同进程所有 judge 调用共用——对网关是"同一段会话"，利于其路由与提示缓存。
+_JUDGE_OPENCODE_SESSION_ID = uuid.uuid4().hex
 _JUDGE_RETRY_BASE_SECONDS = 8.0
 
 JUDGE_SYSTEM_PROMPT = """你是严格的电商 Agent 评测员。给你一段"买家多轮提问与 Agent 回复"的对话记录、
@@ -190,7 +194,10 @@ async def call_llm_with_retry(client: httpx.AsyncClient, payload: dict) -> str:
             response = await asyncio.wait_for(
                 client.post(
                     f"{os.environ['LLM_BASE_URL'].rstrip('/')}/chat/completions",
-                    headers={"Authorization": f"Bearer {os.environ['LLM_API_KEY']}"},
+                    headers={
+                        "Authorization": f"Bearer {os.environ['LLM_API_KEY']}",
+                        "x-opencode-session": _JUDGE_OPENCODE_SESSION_ID,
+                    },
                     json=payload,
                     timeout=120,
                 ),

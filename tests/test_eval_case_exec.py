@@ -200,9 +200,11 @@ class TestCallLlmWithRetry:
         def __init__(self, failures: int) -> None:
             self.failures = failures
             self.calls = 0
+            self.seen_headers: list[dict] = []
 
         async def post(self, url, headers=None, json=None, timeout=None):
             self.calls += 1
+            self.seen_headers.append(dict(headers or {}))
             if self.calls <= self.failures:
                 error = RuntimeError("Error code: 502")
                 error.status_code = 502
@@ -238,6 +240,19 @@ class TestCallLlmWithRetry:
         with pytest.raises(RuntimeError, match="400"):
             await er.call_llm_with_retry(client, {"model": "m"})
         assert client.calls == 1
+
+    async def test_sends_stable_opencode_session_header(self, monkeypatch):
+        """网关 Console Go 路由要求 x-opencode-session（2026-09-07 起 deepseek
+        路径 400 MissingSessionID 实锤）：每次调用带进程级稳定会话 ID，
+        重试间不变。"""
+        client = self._FlakyClient(failures=1)
+        monkeypatch.setattr(er, "_JUDGE_RETRY_BASE_SECONDS", 0.001)
+        await er.call_llm_with_retry(client, {"model": "m"})
+        assert client.calls == 2
+        session_ids = {h.get("x-opencode-session") for h in client.seen_headers}
+        assert len(session_ids) == 1
+        sid = session_ids.pop()
+        assert sid and len(sid) >= 16
 
     class _NoContentClient:
         """先导v2 实测形态：推理模型把输出预算烧在 reasoning 上（reasoning_tokens
