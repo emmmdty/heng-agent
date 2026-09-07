@@ -20,6 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 def count_tool_invokes(records: list[dict]) -> int:
     """一份会话流水里的 tool.invoke 事件数（别的 event 类型不计）。"""

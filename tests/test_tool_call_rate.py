@@ -7,11 +7,8 @@
 """
 import json
 
-from pathlib import Path
-
 from scripts.eval.tool_call_rate import (
     case_of,
-    collect,
     compare,
     count_agent_turns,
     count_tool_invokes,
@@ -96,3 +93,36 @@ def test_collect_missing_session_fails_loud(tmp_path):
         assert "ghost" in str(err)
     else:
         raise AssertionError("流水缺失必须报错，不许按 0 计洗成假绿")
+
+
+def test_main_cli_gate_pass_path(tmp_path, monkeypatch, capsys):
+    """CLI 全路径守卫：main() 端到端可跑（--dir 默认值求值含 PROJECT_ROOT），
+    gate 通过返回 0。回归起因：tool_call_rate.py 用了 PROJECT_ROOT 却没定义，
+    argparse 构造时 default 求值即 NameError——纯函数测试全绿照样 CLI 必崩。
+    """
+    import scripts.eval.tool_call_rate as tcr
+
+    monkeypatch.setattr(tcr, "PROJECT_ROOT", tmp_path)
+    conv = tmp_path / "data" / "conversations"
+    conv.mkdir(parents=True)
+    for stem in ("aaa111", "bbb222"):
+        (conv / f"eval-search-budget-{stem}.jsonl").write_text(
+            "\n".join([
+                json.dumps({"kind": "event", "type": "tool.invoke", "payload": {}}),
+                json.dumps({"kind": "turn", "role": "agent"}),
+            ]),
+            encoding="utf-8",
+        )
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        json.dumps({"results": [{"session_id": "eval-search-budget-aaa111"}]}),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps({"results": [{"session_id": "eval-search-budget-bbb222"}]}),
+        encoding="utf-8",
+    )
+    ret = tcr.main(["--baseline", str(baseline), "--candidate", str(candidate)])
+    assert ret == 0
+    assert '"gate_ok": true' in capsys.readouterr().out
