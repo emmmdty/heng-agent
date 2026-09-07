@@ -160,6 +160,66 @@ class TestSkillStageController:
         assert asyncio.run(main()) == _DELIVERY_STAGES
 
 
+class TestFidelityLedger:
+    """heng.yml ↔ definitions.yml 搬运对账的可执行版（设计笔记第五节的表）。
+
+    保真度缺口的本质：flag 开时 heng.yml 单块不再发送，片段没搬到的纪律
+    就静默消失——C4 烧前 review 抓出三处（landed_price/ship_to 内联纪律、
+    派发语义只在 search 档、web_search_tool 零提及）。本测试把对账表钉成
+    确定性断言：以后任何人改 heng.yml 或 definitions.yml，漏搬必红。
+    断言用签名短语（工具名/字段名/关键词）而不是整句——卡的是
+    "这条纪律涉及的工具与字段在片段里有没有被提及"这个保真度本质，
+    搬运时的措辞差异不误报。
+    """
+
+    _LEDGER = [
+        # (签名短语, heng.yml 纪律块)
+        ("price_max_major", "工具说明：product_search 预算硬约束必传"),
+        ("filtered_out", "工具说明/工作约定 7：被挡候选如实说明"),
+        ("landed_price", "工具说明：product_search 传 ship_to 内联到手价，比价直接用"),
+        ("ship_to", "工具说明：product_search 传 ship_to 内联到手价明细"),
+        ("quote_basket_tool", "工具说明：组合到手价，禁止单品相加"),
+        ("optimize_basket_tool", "工具说明：预算最优组合，三个数都由它返回"),
+        ("taxable_base_major", "工作约定 2：计税基数是超出免税额度的部分"),
+        ("de_minimis_threshold_native_major", "工作约定 2：免税额度原生币种口径"),
+        ("separate_purchase_landed_major", "工作约定 2：分开买 vs 一起买由工具返回"),
+        ("combining_saving_major", "工作约定 2：一起买省多少由工具返回"),
+        ("category_insight_tool", "工具说明：品类洞察只给口径不代商品"),
+        ("web_search_tool", "工具说明：web_search（若可用）查时效信息"),
+        ("task_dispatch", "调度工具：派发语义 + demands 自包含"),
+        ("确认卡", "工作约定 1：订单写操作先确认卡"),
+        ("默认地址", "工作约定 1：系统不存在默认收货信息"),
+        ("buyer-preferences", "记忆：<buyer-preferences> 注入与参考"),
+        ("remember_preference_tool", "记忆工具：长期偏好写入"),
+        ("forget_preference_tool", "记忆撤回：statement 照抄原文"),
+        ("凭印象编造", "工作约定 2 总纲：数字事实必须来自工具返回"),
+        ("退款路径", "工作约定 4：不承诺支付物流能力"),
+        ("凭通用经验", "工作约定 6：知识库降级口径（不含具体金额）"),
+        ("说成没有这个商品", "工作约定 7：filtered_out 不说成没有该商品"),
+    ]
+
+    def _render(self, stages):
+        reg = _registry()
+        return SKILL_BASE_HEADER + "\n\n" + reg.render_stages(frozenset(stages))
+
+    def test_union_render_covers_all_heng_disciplines(self):
+        rendered = self._render({Stage.SEARCH, Stage.TRADE, Stage.MEMORY})
+        missing = [
+            f"{sig!r}（{why}）" for sig, why in self._LEDGER if sig not in rendered
+        ]
+        assert not missing, f"flag 开时以下 heng.yml 纪律没有搬进任何片段：{'、'.join(missing)}"
+
+    def test_dispatch_discipline_available_in_trade_and_memory_rounds(self):
+        """task_dispatch 工具在 flag 开时全阶段可见（工具子集未接线），
+        派发纪律却只挂在 search 档——trade/memory 轮模型看得见工具
+        却没有任何用法指引。派发语义必须进 COMMON。"""
+        for stage in (Stage.TRADE, Stage.MEMORY):
+            rendered = self._render({stage})
+            assert "task_dispatch" in rendered, (
+                f"{stage.value} 轮可见 task_dispatch 工具却没有派发纪律"
+            )
+
+
 class TestSkillStagePromptMiddleware:
     def _middleware(self):
         from app.application.agents.skill_stage import SkillStagePromptMiddleware

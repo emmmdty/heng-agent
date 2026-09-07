@@ -15,7 +15,9 @@ skills:
     # product_search_tool 是常驻档（C1：R8 109 次调用，几乎每轮都用；
     # heng.yml 的交易流也要求 optimize_basket 前先检索候选）——挂 common
     # 让它在任何阶段都不可被渐进加载过滤掉（保守铁律：宁可多带）。
-    tools: [product_search_tool]
+    # task_dispatch 同理：工具子集未接线，flag 开时它全阶段可见，
+    # 派发纪律必须跟着工具走（B1 评审裁定 product_search 常驻时的同一条逻辑）。
+    tools: [product_search_tool, task_dispatch]
     prompt_fragments:
       - "本系统不涉及支付与物流，不要向买家承诺退款路径、发货时效等不存在的能力。"
       - "工具返回 [error]（包括超时、熔断、不可用）时如实告知买家哪一环节没拿到数据，给出可行的下一步，绝不编造商品、价格或订单信息填补空白。"
@@ -25,18 +27,20 @@ skills:
       - "知识类工具（category_insight_tool）不可用时的口径：可以凭通用经验给不含具体金额的选购口径（怎么看材质、看哪些参数、常见坑），但必须明确标注这不是来自知识库的数据；具体价格区间不能给——那是数字事实，必须有工具出处，没有出处就如实说价格区间要等知识库恢复后才能给准。"
       - "product_search_tool 的检索纪律：买家有预算硬约束时必传 price_max_major，由检索链路结构化过滤；预算/收货国等约束只对提出它的那轮诉求生效，买家换品类重新检索时不要自动沿用上一轮的上限（除非买家明说）。"
       - "product_search_tool 返回里的 filtered_out 是召回到但被硬约束挡掉的候选：若已有买家要的品类商品，必须如实说清库里有但被哪条约束挡住，并给出放宽建议；绝不能把它说成没有这个商品。"
+      - "product_search_tool 传 ship_to 时商品卡自动内联 landed_price 到手价明细（小计+运费+关税），比价/算运费直接用 landed_price，不要自己算。"
+      - "调度工具 task_dispatch 的派发语义：demands 必须自包含本次任务所需上下文（预算、product_id/sku_id、收货地址等），子代理看不到你的对话历史；买家长期偏好无需转达，系统会自动把 <buyer-preferences> 注入给检索子代理；多个彼此独立的子任务必须在同一轮一次性发起多个 task_dispatch（系统并发执行）。"
+      - "单干 vs 派发的判断：默认自己直接调业务工具单干；仅当子任务可并行、需要上下文隔离或调用链深时才用 task_dispatch。一次简单检索、一次下单/查单/取消，都应该自己直接调工具完成，不要派发。"
     criteria:
       - "回复不承诺系统不存在的能力（支付/物流/退款/默认地址）"
       - "工具失败时如实留痕并给下一步，不用编造内容填补"
 
   - id: search-basics
     stages: [search]
-    tools: [product_search_tool, category_insight_tool, task_dispatch]
+    tools: [product_search_tool, category_insight_tool]
     prompt_fragments:
       - "category_insight_tool 只提供判断口径，不返回可买商品：只要买家是在找/推荐/买商品，查完它必须紧接着调 product_search_tool 给出具体商品（含 product_id 与价格）。"
       - "不要自行发明商品定义；以检索回来的候选为准，候选与买家意图大体相符就推荐，并如实说明差异让买家自己定夺。"
-      - "调度工具 task_dispatch 的派发语义：demands 必须自包含本次任务所需上下文（预算、product_id/sku_id、收货地址等），子代理看不到你的对话历史；买家长期偏好无需转达，系统会自动把 <buyer-preferences> 注入给检索子代理；多个彼此独立的子任务必须在同一轮一次性发起多个 task_dispatch（系统并发执行）。"
-      - "单干 vs 派发的判断：默认自己直接调业务工具单干；仅当子任务可并行、需要上下文隔离或调用链深时才用 task_dispatch。一次简单检索、一次下单/查单/取消，都应该自己直接调工具完成，不要派发。"
+      - "web_search_tool（若可用）：联网查知识库覆盖不到的时效信息，知识库未覆盖的时效政策问题联网查证后引用来源。"
     criteria:
       - "价格/库存等数字事实全部来自工具返回"
       - "知识库类工具之后必须落到具体商品（若买家在找商品）"
