@@ -100,6 +100,65 @@ class TestSkillStageController:
         c.set_stage("帮我取消刚才那个订单")
         assert "product_search_tool" in c.tool_subset()
 
+    def test_stage_state_is_task_local_under_concurrent_intents(self):
+        """并发隔离（C4 烧前 review 定位的竞态）：控制器是进程单例，阶段态
+        原先是实例可变字段——worker 并发消费 / FastAPI 并发请求下，会话 A
+        set_stage 之后、模型调用读 prompt 之前，会话 B 的 set_stage 会把 A
+        的阶段串掉（search 轮拿到 trade 纪律、trade 轮丢检索纪律）。
+        阶段态必须落在当前异步任务的上下文里，各会话各持各的。"""
+        c = self._controller()
+        results: dict = {}
+
+        async def session(query: str, key: str, delay: float):
+            await asyncio.sleep(delay)
+            c.set_stage(query)
+            await asyncio.sleep(0.01)
+            results[key] = c.active_stages()
+
+        async def main():
+            await asyncio.gather(
+                session("帮我推荐一款露营灯", "search", 0.0),
+                session("帮我取消刚才那个订单", "trade", 0.005),
+            )
+
+        asyncio.run(main())
+        assert results["search"] == frozenset({Stage.SEARCH}), (
+            "会话 A 的阶段被并发会话 B 串掉了"
+        )
+        assert results["trade"] == frozenset({Stage.TRADE})
+
+    def test_concurrent_renders_get_own_stage_prompt(self):
+        """中间件读的是当前任务的阶段态：两个并发渲染各拿各的 system prompt。"""
+        from app.application.agents.skill_stage import SkillStagePromptMiddleware
+
+        mw = SkillStagePromptMiddleware(self._controller())
+        prompts: dict = {}
+
+        async def render(query: str, key: str, delay: float):
+            await asyncio.sleep(delay)
+            mw._controller.set_stage(query)
+            await asyncio.sleep(0.01)
+            prompts[key] = mw._controller.render_system_prompt()
+
+        async def main():
+            await asyncio.gather(
+                render("帮我推荐一款露营灯", "search", 0.0),
+                render("帮我取消刚才那个订单", "trade", 0.005),
+            )
+
+        asyncio.run(main())
+        assert prompts["search"] != prompts["trade"]
+
+    def test_fresh_task_without_set_stage_defaults_to_all_stages(self):
+        """未经 set_stage 的任务（后台调用等）落保守默认 = 全交付阶段，
+        与控制器初始态同口径——宁可多带，不缺纪律。"""
+        c = self._controller()
+
+        async def main():
+            return c.active_stages()
+
+        assert asyncio.run(main()) == _DELIVERY_STAGES
+
 
 class TestSkillStagePromptMiddleware:
     def _middleware(self):
