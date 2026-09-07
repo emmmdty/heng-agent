@@ -271,7 +271,38 @@ async def call_judge(
     }
 
     content = await call_llm_with_retry(client, payload)
-    return json.loads(content)
+    judged = json.loads(content)
+    _validate_judged_shape(judged, content)
+    return judged
+
+
+def _validate_judged_shape(judged, content: str) -> None:
+    """judge rubric JSON 的形态校验（边界处一次把关，下游 score_case/渲染信它）。
+
+    实测事故（C4 轮 optimize-then-confirm-card ERROR）：judge 偶发把
+    p0/p1/p2 返回成字符串，score_case 的 ratio() 迭代到字符上
+    item.get("pass") 当场裸 AttributeError——只有类名没有机制，error 行没法
+    行动。缺键是同族隐患且更阴险：score_case 对缺失层级默认空列表 = 该层
+    1.0，judge 偏离约定格式会被洗成满分假绿。两者都必须在这里留名拒收。
+    """
+    if not isinstance(judged, dict):
+        raise RuntimeError(
+            f"judge rubric JSON 形态非法：顶层应为对象，实为 {type(judged).__name__}——"
+            f"原文摘录：{content[:120]!r}"
+        )
+    for level in ("p0", "p1", "p2"):
+        items = judged.get(level)
+        if items is None:
+            raise RuntimeError(
+                f"judge rubric JSON 缺少层级 {level}——缺层会被 score_case 当满分洗掉，"
+                f"按脏输出拒收。原文摘录：{content[:120]!r}"
+            )
+        if not isinstance(items, list) or any(not isinstance(i, dict) for i in items):
+            raise RuntimeError(
+                f"judge rubric JSON 层级 {level} 应为对象数组"
+                f"（元素需含 criterion/reason/pass），实为非法形态——"
+                f"原文摘录：{content[:120]!r}"
+            )
 
 
 def score_case(judged: dict) -> tuple[float, bool]:

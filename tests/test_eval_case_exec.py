@@ -12,6 +12,7 @@ call_llm_with_retry / resolve_judge_model 是 judge 传输与模型解析的唯�
 实现：rubric 判分与 A/B 成对判分共用，不许两处各回退各的。
 """
 import asyncio
+import json
 
 import pytest
 
@@ -187,6 +188,61 @@ class TestResolveJudgeModel:
         monkeypatch.delenv("EVAL_JUDGE_MODEL", raising=False)
         monkeypatch.delenv("LLM_MODEL", raising=False)
         assert er.resolve_judge_model() == "longcat-2.0"
+
+
+class TestCallJudgeShapeValidation:
+    """judge 输出的形态校验（call_judge 边界一次把关）。
+
+    回归：C4 轮 optimize-then-confirm-card ERROR(0.0)——judge 偶发把
+    p0/p1/p2 返回成字符串，score_case 的 ratio() 迭代到字符上
+    item.get("pass") 裸 AttributeError（只有类名没有机制，error 行没法
+    行动）。缺键是同族隐患：score_case 对缺失层级默认空列表 = 该层
+    1.0——judge 偏离约定格式会被洗成满分假绿。两者都必须在边界处留名拒收。
+    """
+
+    async def _call(self, content: str, monkeypatch):
+        async def fake_retry(client, payload):
+            return content
+
+        monkeypatch.setattr(er, "call_llm_with_retry", fake_retry)
+        return await er.call_judge(
+            client=None, transcript="对话", rubric={"p0": [], "p1": [], "p2": []},
+            ground_truth="事实表",
+        )
+
+    async def test_valid_shape_passes_through(self, monkeypatch):
+        valid = json.dumps({
+            "p0": [{"criterion": "c", "reason": "r", "pass": True}],
+            "p1": [], "p2": [],
+        }, ensure_ascii=False)
+        judged = await self._call(valid, monkeypatch)
+        assert judged["p0"][0]["pass"] is True
+
+    async def test_top_level_not_dict_rejected(self, monkeypatch):
+        with pytest.raises(RuntimeError, match="形态非法"):
+            await self._call('["x"]', monkeypatch)
+
+    async def test_missing_level_rejected_not_scored_as_full_marks(self, monkeypatch):
+        with pytest.raises(RuntimeError, match="缺少层级 p2"):
+            await self._call('{"p0": [], "p1": []}', monkeypatch)
+
+    async def test_level_as_string_rejected(self, monkeypatch):
+        with pytest.raises(RuntimeError, match="p0.*对象数组|p0"):
+            await self._call('{"p0": "全部通过", "p1": [], "p2": []}', monkeypatch)
+
+    async def test_non_dict_item_rejected(self, monkeypatch):
+        with pytest.raises(RuntimeError, match="p1"):
+            await self._call('{"p0": [], "p1": ["第一条通过"], "p2": []}', monkeypatch)
+
+    async def test_malformed_judge_lands_as_named_error_not_attribute_error(self, monkeypatch):
+        """端到端：形态非法必须变成带机制名的 RuntimeError——冒到上层
+        error 行才有行动价值，而不是裸 AttributeError。"""
+        try:
+            await self._call('{"p0": "好", "p1": [], "p2": []}', monkeypatch)
+        except RuntimeError as err:
+            assert "judge rubric JSON" in str(err)
+        else:
+            raise AssertionError("形态非法必须拒收")
 
 
 class TestCallLlmWithRetry:
