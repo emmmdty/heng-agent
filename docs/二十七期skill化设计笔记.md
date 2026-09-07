@@ -94,24 +94,31 @@ C2 交付：`app/skills/`（schema.py / registry.py / loader.py / definitions.ym
 | heng.yml（main_agent）纪律块 | 去向 | 状态 |
 |---|---|---|
 | 工作约定 1：确认卡完整性 + 无默认地址 | trade-basics | ✅ 已搬 |
-| 工作约定 2 总纲：数字事实必须来自工具返回 | **common（数字出处是全局纪律）** | ⬜ C3 搬 |
+| 工作约定 2 总纲：数字事实必须来自工具返回 | **common（数字出处是全局纪律）** | ✅ 已搬 |
 | 工作约定 2 细则：组合计价/预算差额/计税基数 | trade-basics | ✅ 已搬 |
-| 工作约定 2 尾巴："都没覆盖到的金额就别给" | trade-basics | ⬜ C3 搬 |
+| 工作约定 2 尾巴："都没覆盖到的金额就别给" | trade-basics | ✅ 已搬 |
 | 工作约定 3：不发明商品定义 | search-basics | ✅ 已搬 |
 | 工作约定 4：不承诺支付物流 | common-boundaries | ✅ 已搬 |
-| 工作约定 5：回复语言对齐 locale、清单+理由 | common | ⬜ C3 搬 |
-| 工作约定 6：工具错误如实 + 知识库降级口径（不含具体金额） | common-boundaries（主体已搬；**知识库降级细则未搬全**） | ⬜ C3 补 |
-| 工作约定 7：filtered_out 透明 | search-basics | ✅ 已搬 |
+| 工作约定 5：回复语言对齐 locale、清单+理由 | common | ✅ 已搬 |
+| 工作约定 6：工具错误如实 + 知识库降级口径（不含具体金额） | common-boundaries | ✅ 已搬全 |
+| 工作约定 7：filtered_out 透明 | common-boundaries | ✅ 已搬 |
 | 工作约定 8：不编造工具故障 | common-boundaries | ✅ 已搬 |
-| 工具说明：product_search（price_max/filtered_out 语义） | search-basics（主体已搬） | ⬜ C3 对齐细节 |
+| 工具说明：product_search（price_max/filtered_out 语义） | common-boundaries（常驻档纪律跟常驻工具） | ✅ 已搬 |
+| 工具说明：product_search（ship_to 内联 landed_price） | **common-boundaries（2026-09-07 补搬——收尾对账缺口①）** | ✅ 已搬 |
 | 工具说明：category_insight（口径不代商品） | search-basics | ✅ 已搬 |
 | 工具说明：quote_basket / optimize_basket | trade-basics | ✅ 已搬 |
-| 工具说明：web_search_tool（"若可用"） | 不入集（运行时未注册） | ✅ 对账确认 |
-| 工具说明：Task* 计划工具段 | **C3 移除**（Task* 不注册，prompt 不得再提及不存在的工具） | ⬜ C3 |
-| 工具说明：task_dispatch 派发语义 + 多任务并发 | search-basics（工具已入集，**配套纪律未搬**） | ⬜ C3 搬 |
-| 单干 vs 派发判断块 | search-basics（保守：单干默认不变） | ⬜ C3 搬 |
+| 工具说明：web_search_tool（"若可用"） | **search-basics（2026-09-07 补搬——缺口②；带"若可用"限定词，与 heng.yml 基线同口径；未配 TAVILY 时工具不存在但提示词提及无害）** | ✅ 已搬 |
+| 工具说明：Task* 计划工具段 | **C3 移除**（Task* 不注册，prompt 不得再提及不存在的工具） | ✅ 已移除 |
+| 工具说明：task_dispatch 派发语义 + 多任务并发 | **common-boundaries（2026-09-07 上移——缺口③：工具全阶段可见，纪律必须跟着工具走）** | ✅ 已搬 |
+| 单干 vs 派发判断块 | **common-boundaries（2026-09-07 上移，同缺口③）** | ✅ 已搬 |
 | 记忆工具说明：remember/forget 边界 | memory-basics | ✅ 已搬 |
-| 子代理 trade 块：cancel 前 query 验状态 | C3 决定（skill 是否喂子代理） | ⬜ C3 记录 |
+| 子代理 trade 块：cancel 前 query 验状态 | skill 只喂 MainAgent（子代理有自己的 heng.yml 提示词，不经 skill 注入） | ✅ 记录 |
+
+> **对账表的可执行版**：`tests/test_skill_wiring.py::TestFidelityLedger`——签名短语
+> 级断言（工具名/字段名/关键词），以后改 heng.yml 或 definitions.yml 漏搬必红。
+> 2026-09-07 补搬运后 flag-on 指纹升级：bb470016 → **d6296117**（flag-off a0915fac
+> 不变，heng.yml 一字未动）。C4 认证轮读数属于 bb470016；d6296117 下已过 smoke
+> 复验（3/3 PASS，prompt P50 10,327，仍远低于基线 17,076）。
 
 ## 六、复现
 
