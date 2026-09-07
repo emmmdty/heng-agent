@@ -414,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
     md_path.write_text(render_markdown(result["summary"]), encoding="utf-8")
 
     s = result["summary"]
-    print(f"# Token 成本构成（C1）\n")
+    print("# Token 成本构成（C1）\n")
     print(f"会话 {s['sessions']}｜agent 轮 {s['agent_turns']}｜"
           f"prompt P50 {s['prompt_tokens_p50']:.0f} / P95 {s['prompt_tokens_p95']:.0f}")
     print(f"固定段真值 {s['floor_tokens']:.0f} token（P50 的 "

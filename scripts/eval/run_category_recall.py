@@ -99,7 +99,7 @@ def render_report(agg: Aggregate, thresholds: Thresholds) -> str:
         "",
         f"标注集 `{_DATASET}`，K={agg.k}，共 {agg.count} 条。标注单位为知识文档名。",
         "",
-        f"| 指标 | 值 | 阈值 |",
+        "| 指标 | 值 | 阈值 |",
         "|---|---|---|",
         f"| Recall@{agg.k} | {agg.recall:.3f} | ≥ {thresholds.recall}（阻断） |",
         f"| MRR | {agg.mrr:.3f} | ≥ {thresholds.mrr}（阻断） |",
