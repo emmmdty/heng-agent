@@ -1,10 +1,11 @@
 # 「衡 · Heng」提交前门禁。
 #
-# check 里的六项全部是**零 LLM 成本**的确定性检查，加起来十几秒，
+# check 里的七项审计脚本全部是**零 LLM 成本**的确定性检查，加起来十几秒
+# （test 里的全量单测另计，约 1 分钟），
 # 所以约定是「每次提交前必跑」，而不是「想起来再跑」。
 # 真正烧钱的端到端 Rubric 回归（eval / eval-smoke）不在 check 里，单独手动跑。
 #
-# make 遇到非零退出码即中断，六个脚本的退出码都已对齐（0 通过 / 1 不通过）。
+# make 遇到非零退出码即中断，七个脚本的退出码都已对齐（0 通过 / 1 不通过）。
 
 .PHONY: check check-ci test datasets cases provenance arithmetic contact basket knowledge eval eval-mainline eval-smoke variance cost health serve serve-faults
 

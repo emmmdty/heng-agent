@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .env
 .pytest_cache/
+.ruff_cache/
+.claude/
 data/
 eval/report-*.md
 eval/report-*.json

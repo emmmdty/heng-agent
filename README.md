@@ -27,12 +27,12 @@ LLM Agent 很容易做出一个"看起来能用"的 demo，难的是回答三个
 
 | 维度 | 读数 | 复现 |
 |---|---|---|
-| 行为评测 | 主线 44 条：基线 **42/44 PASS**（judge 均分 0.9602）；skill-on 轮 **42/44 · 均分 0.9545** | `make eval` |
-| 记忆层认证 | 敏感层 48 对成对比较，decisive **33**，注入开显著优 **p=0.000324**、A 胜份额 CI [0.053, 0.379]，三重认证全过 | `scripts/eval/mem_layer_readout.py` |
+| 行为评测 | 主线 44 条：基线 **42/44 PASS**（judge 均分 0.9602）；skill-on 轮 **42/44 · 均分 0.9545**（结算口径：同臂复跑恢复的 ERROR 案计入） | `make eval-mainline` |
+| 记忆层认证 | 敏感层 48 对成对比较，decisive **33**，注入开显著优 **p=0.000324**，A 臂胜出份额 bootstrap CI [0.053, 0.379]（不含 0.5，与显著性方向一致），三重认证全过 | `scripts/eval/mem_layer_readout.py` |
 | Skill 渐进加载 | 每意图 prompt P50 **10,738（-37.1%）**，五护栏全过（PASS / 均分 / token / 工具调用率 / 延迟） | `scripts/eval/tool_call_rate.py` |
-| 检索质量 | Recall@8 **0.967** / MRR 0.929（105 条标注，hybrid_rerank，六档对比） | `run_product_recall.py --compare-strategies` |
-| 数字可信度 | 无出处金额率 **4.0%**（456 处金额）；确定性判据门禁八项 **~15 秒零 LLM 成本** | `make check` |
-| 工程基线 | **1,375 单测全绿**（~41s）；CI = `check-ci` 三项门禁 | `uv run pytest` |
+| 检索质量 | Recall@8 **0.967** / MRR 0.929（105 条标注，hybrid_rerank，六档对比） | `scripts/eval/run_product_recall.py --compare-strategies` |
+| 数字可信度 | 无出处金额率 **4.0%**（R8 整轮：456 处金额中 18 处，全为自行算术）；确定性判据门禁零 LLM 成本 | `make check` |
+| 工程基线 | **1,375 单测全绿**（本机约 1 分钟）；CI = `check-ci` 三项门禁 | `uv run pytest` |
 
 ## 架构
 
@@ -45,7 +45,10 @@ LLM Agent 很容易做出一个"看起来能用"的 demo，难的是回答三个
 
 ## 快速开始
 
+前置条件：[uv](https://docs.astral.sh/uv/getting-started/installation/)、Python 3.11+（uv 自动管理）。
+
 ```bash
+git clone https://github.com/emmmdty/heng-agent.git && cd heng-agent
 uv sync
 export LLM_BASE_URL=<OpenAI 兼容网关地址>
 export LLM_API_KEY=<密钥>
@@ -73,11 +76,11 @@ uv run python scripts/smoke_e2e.py --query "帮我找一款 300 块以内、抗�
 | 确定性判据门禁 | 金额出处、算式自洽、组合错加、知识库出处、订单归属、召回指标 | judge 看不到工具返回——"数值对不对"归 judge，"出处属不属实"归判据；每道门禁"真红一次 + 零误报"留档 |
 | Bad-case 飞轮 | 失败自动采集 → 指纹去重 → **人工分诊** → 回归集 | 中间留人工是刻意的：不加分诊就扩测试集，等于把噪声固化成基准 |
 
-提交前门禁——八项全部零 LLM 成本、十几秒：
+提交前门禁——七项确定性审计脚本全部零 LLM 成本、十几秒；`make check` 再加全量单测约 1 分钟：
 
 ```bash
-make check          # pytest + 标注集/用例自检 + 金额出处 + 算式自洽 + 收货字段 + 组合总价 + 知识库出处
-make check-ci       # CI 档（.github/workflows/check.yml）
+make check          # pytest + 标注集自检 + 用例自检 + 金额出处 + 算式自洽 + 收货字段 + 组合总价 + 知识库出处
+make check-ci       # CI 档（.github/workflows/check.yml，前三项）
 ```
 
 ### 两个真实的方法论问题
@@ -105,6 +108,7 @@ make check-ci       # CI 档（.github/workflows/check.yml）
 | embedding_rerank | 0.962 | 0.925 | 0.922 | 0.982 | 0.940 |
 | hybrid_gated | 0.945 | 0.885 | 0.876 | 0.986 | 0.900 |
 | embedding_only | 0.938 | 0.863 | 0.861 | 0.973 | 0.900 |
+| hybrid_rrf | 0.936 | 0.873 | 0.866 | 0.986 | 0.880 |
 | bm25_only | 0.683 | 0.647 | 0.636 | 0.986 | 0.350 |
 
 拆开看边际贡献：**精排贡献 Recall +2.4pt / MRR +6.2pt，混合召回在精排之上只再加 +0.5pt**。
@@ -163,8 +167,8 @@ assets/                # 架构图与其生成脚本
 ## 开发与测试
 
 ```bash
-uv run pytest                                  # 1,375 单测，约 41s
-make check                                     # 八项提交前门禁，零 LLM 成本
+uv run pytest                                  # 1,375 单测，本机约 1 分钟
+make check                                     # 8 项提交前门禁（7 项确定性审计 + pytest），零 LLM 成本
 uv run python scripts/verify_fallback.py       # 模型回退链真上游验证
 uv run python scripts/verify_parallel.py       # 真并行验证
 uv run python scripts/loadtest.py --stages 2,5,10   # 压测
@@ -174,7 +178,7 @@ uv run python scripts/loadtest.py --stages 2,5,10   # 压测
 
 ```bash
 export LLM_BASE_URL=<网关地址> LLM_API_KEY=<密钥>
-docker compose -f docker/docker-compose.yaml up -d --build   # app + qdrant + frontend
+docker compose -f docker/docker-compose.yaml up -d --build   # app + worker + redis + qdrant + frontend
 # 前端 http://localhost:5173   后端 http://localhost:8000
 ```
 
