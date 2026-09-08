@@ -2,7 +2,6 @@
 
 [![check](https://github.com/emmmdty/heng-agent/actions/workflows/check.yml/badge.svg)](https://github.com/emmmdty/heng-agent/actions/workflows/check.yml)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![tests](https://img.shields.io/badge/tests-1%2C375%20passed-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 买家一句自然语言诉求，Agent 完成品类洞察、商品检索、到手价计算、组合优化和下单交易，
@@ -17,7 +16,7 @@ agent credibility engineering: every number has provenance, criteria and a repro
 <p align="center">
   <img src="assets/screenshot-chat.png" alt="对话 + 商品卡 + 事件时间线" width="900">
 </p>
-<p align="center"><sub>一条意图的实时全景：左侧对话与商品卡，右侧事件时间线（工具调用 / token 用量 / 最终回复）</sub></p>
+<p align="center"><sub>一条意图的实时全景：左侧对话与商品卡（每张卡内联到手价拆解：小计 + 运费 + 关税），右侧事件时间线</sub></p>
 
 ## 核心特性
 
@@ -25,7 +24,8 @@ agent credibility engineering: every number has provenance, criteria and a repro
   含长期记忆（偏好沉淀与撤回）
 - **过程实时可见**：token.delta / tool.invoke / number.unsourced / model.fallback……每个事件订阅即得
 - **可信度工程**：8 类确定性判据 + 八项零 LLM 成本提交门禁 + 分级评测 + 统计认证——评测与交付能力并行的一等公民
-- **韧性可检验**：检索三级降级链、模型回退链、故障注入端到端验证，1,375 单测全绿（本机约 1 分钟）
+- **韧性可检验**：检索降级链（默认 `hybrid_rerank`，逐级退到纯本地 `keyword_2gram`）、模型回退链、
+  故障注入端到端验证，1,375 单测全绿（本机约 40 秒）
 
 ## 快速开始
 
@@ -49,15 +49,27 @@ uv run python scripts/smoke_e2e.py --query "帮我找一款 300 块以内、抗�
 本地开发可 `cp .env.example .env` 兜底（已 gitignore，勿提交真实密钥）；环境变量优先于 `.env`。
 检索依赖（embedding / reranker）可空跑降级链，自建方案见 [.env.example](.env.example) 注释。
 
+## 事件时间线
+
+同一次请求在时间线上的样子——工具入参与命中档位、每轮 token 用量、最终回复，订阅即得：
+
+<p align="center">
+  <img src="assets/screenshot-timeline.png" alt="事件时间线" width="520">
+</p>
+
 ## API
 
 | 端点 | 说明 |
 |---|---|
-| `POST /commerce/intents` | 提交买家自然语言意图（同步返回最终回复） |
+| `POST /commerce/intents` | 提交买家自然语言意图（同步返回最终回复；启用队列时内部入队后等结果） |
+| `POST /commerce/intents/async` | 同上但立即返回 `task_id`，结果走 WS 或轮询（需启用队列） |
+| `GET /commerce/tasks/{task_id}` | 查任务状态（queued / running / done / failed，带队列位次） |
 | `WS /commerce/events` | 订阅会话事件流（token.delta / tool.invoke / number.unsourced / model.fallback …） |
 | `GET /commerce/orders/{id}?buyer_id=` | 查询订单（归属校验：非本人与不存在同读数） |
 | `POST /commerce/orders/{id}/cancel` | 取消订单（body 带 buyer_id，归属校验） |
 | `GET /health` | 健康检查（`?deep=1` 真探 embedding / reranker） |
+
+另有两个诊断端点：`GET /debug/memory`（进程内存诊断，需以 `PYTHONTRACEMALLOC=` 启动才有读数）、`GET|POST /debug/faults`（故障注入开关，仅在 `FAULT_INJECTION_ENABLED=1` 的进程里注册）。
 
 ## 架构
 
@@ -114,10 +126,10 @@ LLM Agent 很容易做出一个"看起来能用"的 demo，难的是回答三个
 | 记忆层认证 | 敏感层 48 对成对比较，decisive **33**，注入开显著优 **p=0.000324**，A 臂胜出份额 bootstrap CI [0.053, 0.379]（不含 0.5，与显著性方向一致），三重认证全过 | `scripts/eval/mem_layer_readout.py` |
 | Skill 渐进加载 | 每意图 prompt P50 **10,738（-37.1%）**，五护栏全过（PASS / 均分 / token / 工具调用率 / 延迟） | `scripts/eval/tool_call_rate.py` |
 | 检索质量 | Recall@8 **0.967** / MRR 0.929（105 条标注，hybrid_rerank，六档对比） | `scripts/eval/run_product_recall.py --compare-strategies` |
-| 数字可信度 | 无出处金额率 **4.0%**（R8 整轮：456 处金额中 18 处，全为自行算术）；确定性判据门禁零 LLM 成本 | `make check` |
-| 工程基线 | **1,375 单测全绿**（本机约 1 分钟）；CI = `check-ci` 三项门禁 | `uv run pytest` |
+| 数字可信度 | 无出处金额率 **3.9%**（R8 整轮：456 处金额中 18 处，全为自行算术）；确定性判据门禁零 LLM 成本 | `make check` |
+| 工程基线 | **1,375 单测全绿**（本机约 40 秒）；CI = `check-ci` 三项门禁 | `uv run pytest` |
 
-提交前门禁——七项确定性审计脚本全部零 LLM 成本、十几秒；`make check` 再加全量单测约 1 分钟：
+提交前门禁——七项确定性审计脚本全部零 LLM 成本、十几秒；`make check` 再加全量单测约 1 分钟（其中单测约 40 秒）：
 
 ```bash
 make check          # pytest + 标注集自检 + 用例自检 + 金额出处 + 算式自洽 + 收货字段 + 组合总价 + 知识库出处
@@ -136,6 +148,9 @@ make check-ci       # CI 档（.github/workflows/check.yml，前三项）
 | embedding_only | 0.938 | 0.863 | 0.861 | 0.973 | 0.900 |
 | hybrid_rrf | 0.936 | 0.873 | 0.866 | 0.986 | 0.880 |
 | bm25_only | 0.683 | 0.647 | 0.636 | 0.986 | 0.350 |
+
+（`--compare-strategies` 还会跑第七档 `keyword_2gram`——所有召回基建都挂掉时的纯本地兜底，
+不是可选策略，故不列入对比表。）
 
 拆开看边际贡献：**精排贡献 Recall +2.4pt / MRR +6.2pt，混合召回在精排之上只再加 +0.5pt**。
 混合召回的价值集中在没有精排的降级态。字面路置信度门控只在降级态生效
@@ -183,7 +198,7 @@ assets/                # 架构图、效果截图与其生成脚本
 ## 开发与测试
 
 ```bash
-uv run pytest                                  # 1,375 单测，本机约 1 分钟
+uv run pytest                                  # 1,375 单测，本机约 40 秒
 make check                                     # 8 项提交前门禁（7 项确定性审计 + pytest），零 LLM 成本
 uv run python scripts/verify_fallback.py       # 模型回退链真上游验证
 uv run python scripts/verify_parallel.py       # 真并行验证

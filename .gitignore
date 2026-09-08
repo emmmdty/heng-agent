@@ -17,20 +17,20 @@ eval/category-recall-report-*.md
 uvicorn.log
 # 跑测运行日志：与 report-* 同为跑测产物，不入库
 eval/*.log
-# A/B 分流跑测产物（二十五期 M1）：partial 是续跑态、run json / report 是最终产物
+# A/B 分流跑测产物：partial 是续跑态、run json / report 是最终产物
 eval/ab-partial-*.json
 eval/ab-run-*.json
 eval/ab-report-*.md
 eval/ab-judgeprobe-*.json
-# cross 重判分析产物（二十五期第 17 条）：复用执行产物重配对，同为跑测产物不入库
+# cross 重判分析产物：复用执行产物重配对，同为跑测产物不入库
 eval/ab-crossrejudge-*.json
-# 记忆回放产物（二十六期 #12 任务 B）：mem- 前缀分桶，与 ab-* 同纪律不入库
+# 记忆回放产物：mem- 前缀分桶，与 ab-* 同纪律不入库
 eval/mem-partial-*.json
 eval/mem-run-*.json
 eval/mem-report-*.md
 eval/mem-deposit-*.json
 eval/mem-dualjudge-*.json
-# Skill 线产物（二十七期 #14 任务 C）：skill- 前缀分桶，与 ab-*/mem-* 同纪律不入库
+# Skill 线产物：skill- 前缀分桶，与 ab-*/mem-* 同纪律不入库
 eval/skill-*
 
 # 设计与开发过程文档（本地保留，不入公开仓库）

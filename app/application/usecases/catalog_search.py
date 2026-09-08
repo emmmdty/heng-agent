@@ -8,8 +8,20 @@
     4. Reranker 精排取 top_k；失败/未配置降级按向量分排序（rerank_applied=false）
     5. 组装商品卡 JSON；命中 ship_to 时内联到手价（小计+运费+关税，统一目标币种）
 
-降级链（recall_strategy 如实标注）：
-    embedding_rerank → embedding_only → keyword_2gram（embedding 服务异常时兜底）
+降级链（recall_strategy 如实标注）：一阶段按"实际拿到哪些依赖"自然分档，
+二阶段精排成功再改写成 `*_rerank`，所以标注值是两段的乘积，不是一条线性链。
+
+    一阶段  向量+字面 → hybrid_rrf（字面路置信）/ hybrid_gated_vector（字面路不置信）
+                        ├ 向量路异常 → bm25_only
+            仅向量     → embedding_only
+            仅字面     → bm25_only
+            全无/异常  → keyword_2gram（纯本地兜底，不再试精排）
+    二阶段  精排成功：hybrid_rrf→hybrid_rerank、hybrid_gated_vector→hybrid_gated_rerank、
+            embedding_only→embedding_rerank、bm25_only→bm25_rerank（见 `_RERANKABLE`）；
+            精排失败则保留一阶段档位并置 rerank_applied=false
+
+默认部署（依赖齐全 + 精排可用）落在 `hybrid_rerank`，最深退到 `keyword_2gram`。
+档位间的召回质量差距由 `scripts/eval/run_product_recall.py --compare-strategies` 量化。
 
 计价收敛设计：到手价在检索链路内联计算（TariffSchedule 规则内核），
 不给 Agent 单独暴露比价/运费工具，减少不必要的工具调用轮次。
@@ -182,7 +194,7 @@ class CatalogSearchUseCase:
         self._vector_index = vector_index
         self._reranker = reranker
         self._tariff = tariff_schedule or TariffSchedule(rates=ExchangeRateTable())
-        # lexical_index 为 None 即退回四期行为（纯向量 + 关键词兜底），
+        # lexical_index 为 None 即退回 v4 行为（纯向量 + 关键词兜底），
         # 混合召回是加法而不是改写：既有降级链一行未动。
         self._lexical_index = lexical_index
         self._rrf_k = rrf_k
@@ -301,7 +313,7 @@ class CatalogSearchUseCase:
             "reason": reason,
         }
         # 属性冲突声明在**被挡掉的候选上比在 hits 上更要紧**。
-        # 二十一期实测（report-20260904-131821）：买家说"预算 200 元"，
+        # v21 实测（report-20260904-131821）：买家说"预算 200 元"，
         # 299 元的半入耳款因此被 over_price_cap 挡进 filtered_out，
         # 而这里当时不带声明——模型照旧写出"它支持主动降噪"。
         # `conflict-budget-spec` 这条用例里那款商品**必然**走这条路
@@ -570,7 +582,7 @@ class CatalogSearchUseCase:
     def _attribute_mismatch(product: Product, spec: ProductSearchSpec) -> Optional[dict]:
         """买家点名要、而本商品显式声明不具备的属性——**结构化地**说出来。
 
-        来源（二十期整轮实测 `conflict-budget-spec`）：买家要"顶配的主动降噪耳机"，
+        来源（v20 整轮实测 `conflict-budget-spec`）：买家要"顶配的主动降噪耳机"，
         模型把只有通话降噪的半入耳款列在"库里有的主动降噪耳机"标题下。
         卡片上那句"仅通话降噪（麦克风侧），无主动降噪 ANC"**当时就在**——
         它是散文，模型可以不当回事。
@@ -583,7 +595,7 @@ class CatalogSearchUseCase:
         而且要显式成模型没法忽略的形状。
 
         note 里带上"该怎么办"而不只是"是什么"：只说"不具备"，模型仍可能把它
-        当成一个可以商量的次优选项——十期那次它拿着一句"这些商品不发欧盟"
+        当成一个可以商量的次优选项——v10 那次它拿着一句"这些商品不发欧盟"
         直接告诉了买家（工具的错误信息要能让模型自纠）。
         """
         missing = product.missing_attributes_for(spec.normalized_query)

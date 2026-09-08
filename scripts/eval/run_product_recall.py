@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""商品检索（product_search）召回评测 —— 见能力清单 13-2 项。
+"""商品检索（product_search）召回评测。
 
 直连 `CatalogSearchUseCase`，不过 HTTP、不过 Agent：召回评测的定位是模块级
 「日常体检」，改一行权重、换一版 reranker 都该能几秒钟跑一遍，才可能常驻 CI。
@@ -9,15 +9,16 @@
     # 默认档（有 embedding 凭据就走向量+精排，否则自动降级）
     uv run python scripts/eval/run_product_recall.py
 
-    # 三档降级链对比：量化"降级到底损失多少召回质量"
+    # 七档对比（_STRATEGIES 全量）：量化"降级到底损失多少召回质量"
     uv run python scripts/eval/run_product_recall.py --compare-strategies
 
     # 无凭据也能跑：纯关键词档，适合 CI
     uv run python scripts/eval/run_product_recall.py --strategy keyword_2gram
 
-关于 K 的选择（重要）：`catalog_search._RECALL_TOP_N = 8` 限制了向量召回只取 8 个候选，
-因此向量档的 Recall@K 在 K>8 时**不可能再涨**，而关键词档是全库打分无上限。
-在 K=10 上对比两档等于系统性地偏袒关键词档，故默认 K=8。
+关于 K 的选择（重要）：`catalog_search._RECALL_TOP_N = 16` 限制了一阶段召回深度，
+因此向量档的 Recall@K 在 K>16 时**不可能再涨**，而关键词档是全库打分无上限。
+在更大的 K 上对比两档等于系统性地偏袒关键词档。默认取 K=8：既留出
+召回深度 16 > K 的空间让精排能真的补召回，又不越过向量档的上限。
 """
 from __future__ import annotations
 
@@ -79,7 +80,7 @@ class VectorBackend:
     """跨档位共享的向量后端（embedder + 已建好的 Qdrant 索引）。
 
     为什么必须共享而不是每档新建：qdrant-client 的本地嵌入模式是**单进程文件锁**，
-    同一进程内建第二个 client 就报 `Storage folder ... already accessed`（踩坑档案第 5 条）。
+    同一进程内建第二个 client 就报 `Storage folder ... already accessed`。
     原先只有 3 档、其中 2 档用向量，靠上一轮对象被 GC 回收侥幸躲过；档位加到 5 个
     立即必现——这类"靠 GC 时机才对"的代码不算能用。
 
@@ -307,7 +308,7 @@ async def main() -> None:
     parser.add_argument("--dataset", default=str(_DATASET))
     parser.add_argument("--top-k", type=int, default=8, help="默认 8：向量召回深度上限即 8")
     parser.add_argument("--strategy", choices=_STRATEGIES, default="embedding_rerank")
-    parser.add_argument("--compare-strategies", action="store_true", help="三档降级链对比")
+    parser.add_argument("--compare-strategies", action="store_true", help="七档对比（_STRATEGIES 全量）")
     parser.add_argument("--min-recall", type=float, default=0.75)
     parser.add_argument("--min-mrr", type=float, default=0.65)
     parser.add_argument("--min-ndcg", type=float, default=0.70)

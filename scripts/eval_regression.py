@@ -59,7 +59,7 @@ _JUDGE_MAX_RETRIES = 3
 # timeout=120 的读超时（正常慢调用不受影响），只兜"读超时被绕过"的悬挂。
 _JUDGE_ATTEMPT_DEADLINE_SECONDS = 240
 # 网关 Console Go 路由要求客户端带稳定会话 ID（2026-09-07 起 deepseek 路径
-# 400 MissingSessionID 实锤，docs/go/#where-can-i-use-it）：进程级生成一次，
+# 400 MissingSessionID 实锤，见 https://opencode.ai/docs/go/ ）：进程级生成一次，
 # 同进程所有 judge 调用共用——对网关是"同一段会话"，利于其路由与提示缓存。
 _JUDGE_OPENCODE_SESSION_ID = uuid.uuid4().hex
 _JUDGE_RETRY_BASE_SECONDS = 8.0
@@ -135,7 +135,7 @@ def _landed_price_rules() -> list[str]:
         TariffSchedule,
     )
 
-    # 免税额度改走公开方法（十一期）：原先直接 import `_DE_MINIMIS_CNY_MINOR`，
+    # 免税额度改走公开方法（v11）：原先直接 import `_DE_MINIMIS_CNY_MINOR`，
     # 规则表一改存储结构这里就断——事实基准依赖领域层私有常量本身就是缝。
     tariff = TariffSchedule(rates=ExchangeRateTable())
 
@@ -649,9 +649,9 @@ def select_cases(
     发版前 full（全部）。`full` 不需要逐条标注——所有用例隐含属于它，
     否则新增用例漏标 tag 就会永远不被跑到，而"静默不跑"和真绿外观完全一样。
 
-    `--exclude-tag` 是主线基线的复现入口：二十三期加进 11 条红队用例后，
+    `--exclude-tag` 是主线基线的复现入口：v23 加进 11 条红队用例后，
     用例集是 55 条，而 full 是隐含标签——**没有任何选择器选得出那 44 条主线**，
-    于是"full 44 条 44/44、均分 0.993"这条被二十五期当护栏门槛的基线不可复现。
+    于是"full 44 条 44/44、均分 0.993"这条被 v25 当护栏门槛的基线不可复现。
     做成排除式而不是给 44 条各标一个 `mainline`，理由同上一段：
     逐条标注一旦漏标，那条用例会静默掉出基线集，外观与真绿一致。
 
@@ -685,14 +685,14 @@ def select_cases(
 def _guard_stale_service(health: dict, allow: bool) -> None:
     """服务进程比磁盘上的代码旧时拒绝跑回归。
 
-    九期实测踩过，代价是一轮白跑的定向回归：uvicorn 16:43:06 启动，
+    v9 实测踩过，代价是一轮白跑的定向回归：uvicorn 16:43:06 启动，
     `tariff_schedule.py` 16:49:20 修完（给 to_dict 加 de_minimis_threshold_major），
     进程没重启。之后重跑的两条用例打的都是装着旧代码的服务，
     新字段一次也没出现在工具返回里——而 408 单测全绿（单测读磁盘），
     /health 报的配置行与新服务一字不差，报告也照样 PASS。
 
     没有这道拦截，这种轮次唯一的症状是"修了但读数没变"，
-    而交接文档会把人引向"再去查代码里第三条没覆盖的路径"——代码是对的。
+    而那条线索会把人引向"再去查代码里第三条没覆盖的路径"——代码是对的。
     整轮 13 条 25-40 分钟真金白银，值得在开跑前花这一次 /health 拦下来。
     """
     code = health.get("code")
@@ -713,7 +713,7 @@ def _guard_stale_service(health: dict, allow: bool) -> None:
 def _guard_ephemeral_data_dir(health: dict, allow: bool) -> None:
     """流水落在系统临时目录里时拒绝跑回归。
 
-    2026-09-04 实测踩过一次，代价是十九期整批读数事后无法复算：
+    2026-09-04 实测踩过一次，代价是 v19 整批读数事后无法复算：
     为了躲开 Qdrant 的单进程文件锁，把 `DATA_DIR` 指到了会话级临时目录。
     当轮一切正常，`make check` 也绿；会话结束后目录被清理，
     留在仓库 `eval/` 里的报告记着一个**已经不存在的 data_dir**——
@@ -726,7 +726,7 @@ def _guard_ephemeral_data_dir(health: dict, allow: bool) -> None:
     """
     raw = str(health.get("data_dir") or "").strip()
     if not raw or allow:
-        # 十五期之前的 /health 不报 data_dir——拿不到就别拦，不把老服务锁死
+        # v15 之前的 /health 不报 data_dir——拿不到就别拦，不把老服务锁死
         return
     temp_root = Path(tempfile.gettempdir()).resolve()
     try:

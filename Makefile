@@ -17,7 +17,7 @@ check: test datasets cases provenance arithmetic contact basket knowledge
 # provenance 扫的是 data/conversations/（跑测产物，gitignore），
 # CI 全新 checkout 上一份流水都没有，`--report latest` 会按设计报错退出。
 # **不给它加"没数据就当通过"的旁路**：0 处金额算出来的 0% 被当成满分放行，
-# 比红灯更危险（十期踩坑 33 的同一条）。宁可在 CI 里明确少跑一项，
+# 比红灯更危险（同一条纪律）。宁可在 CI 里明确少跑一项，
 # 也不要让一项判据在 CI 上变成永远绿的装饰。
 #
 # 另：这三项虽然零 LLM 成本，却仍需要 LLM_API_KEY **存在**——
@@ -37,7 +37,7 @@ cases:
 
 # 阈值 = 当前基线 + 余量，不能定成 0：
 # 对已有出处数字的对比与修辞取整属于合理用法，本来就会占掉几个点。
-# 当前基线 6.7%（九期实测），收掉免税额度阈值那条尾巴后预计更低，
+# 当前基线 6.7%（实测），收掉免税额度阈值那条尾巴后预计更低，
 # 届时再往下收紧，不要在拿到新读数之前先收。
 PROVENANCE_MAX_RATIO ?= 0.08
 # 吃跑测产物的门禁默认看最近一轮（--report latest）。补跑/定向切片会把 latest
@@ -56,7 +56,7 @@ provenance:
 # 与 provenance 并列但**口径不同：不设阈值、不设样本量下限，命中一处即红**。
 # 无出处金额率是比率（修辞取整本来就占几个点），小样本不判定是对的；
 # 而 886.34 × 7.5% = 6.48 是能指着原文说"这一行算错了"的事实错误，
-# 没有"这轮抖了一下"的解释空间，也就没有摊薄它的口径（踩坑 45 同一面）。
+# 没有"这轮抖了一下"的解释空间，也就没有摊薄它的口径。
 arithmetic:
 	uv run python scripts/eval/audit_arithmetic.py --report $(REPORT) --gate
 
@@ -64,7 +64,7 @@ arithmetic:
 #
 # 口径同算式自洽（不设阈值、不设样本量下限，命中一处即红），理由也同一条：
 # "编造了一个收货地址"是能指着原文说"这个地址不存在"的事实错误，
-# 不是可以被样本量摊薄的比率。二十期 `clarify-missing-address` 那次，
+# 不是可以被样本量摊薄的比率。`clarify-missing-address` 那次，
 # Agent 写的是"您之前的记录是上海市浦东新区世纪大道100号"——**一个金额都没有**，
 # 前两条扫描完全无感，所以必须是第三条独立判据。
 contact:
@@ -76,7 +76,7 @@ contact:
 # "这行把组合总价算错了"是能指着原文说的事实错误。
 # 但注意它有一条前置：会话内存在 quote_basket 报价才有 ground truth，
 # 没有报价时判据只作线索、不判罪；所以"0 违规"分两种，
-# 判词会写明是"判过了、全对"还是"压根没东西可判"（踩坑 33）。
+# 判词会写明是"判过了、全对"还是"压根没东西可判"。
 basket:
 	uv run python scripts/eval/audit_basket_sum.py --report $(REPORT) --gate
 
@@ -91,21 +91,21 @@ knowledge:
 
 # —— 以下带真实 LLM 成本，不进 check ——
 
-# 整轮回归：40 条 ≈ 80-120 分钟。跑之前先确认 /health 里 semantic_cache 为 false。
+# 整轮回归：全部 60 条（按每条 2-3 分钟估，约 2-3 小时，视网关限流而定）。
+# 跑之前先确认 /health 里 semantic_cache 为 false。
 # 其中 3 条带故障注入，需要服务以 make serve-faults 起（否则开跑前被拦下）。
 eval:
 	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py
 
-# 主线档：全部用例剔掉 11 条红队 + 5 条 B1 记忆敏感用例（mem 标签，归 B2
-# 回放人群）= 44 条，与二十三期 R7 基线**同一份考卷**
+# 主线档：全部 60 条剔掉 11 条红队 + 5 条记忆敏感用例（mem 标签，归记忆回放
+# 人群）= 44 条，与历史基线**同一份考卷**
 # （用例集身份 d9e463d2，已与 eval/report-20260904-180527.json 逐位核对）。
 #
-# 为什么要单独一档：red team 用例是二十三期加的，而 `full` 是隐含标签
-# （所有用例都属于它），于是 `make eval` 从那以后跑的是 55 条。
-# 交接文档与贡献证明里"44 条 44/44、均分 0.993"这条基线一度**没有选择器能复现**，
-# 而二十五期 A/B 的一票否决护栏引用的正是它——拿 55 条那轮去比就是两把尺子。
-# 二十七期 B1 扩容后同理：mem 用例若不排除，主线分母 44 → 49，
-# C4 护栏轮与 R8（report-20260905-142017.json）的对比就断了。
+# 为什么要单独一档：红队与记忆用例都是后来扩容加的，而 `make eval` 不带选择器
+# 时跑的是全量，分母会随扩容一路变大。历史读数"44 条 44/44、均分 0.993"
+# 一度**没有选择器能复现**，而 A/B 的一票否决护栏引用的正是它——
+# 拿全量那轮去比就是两把尺子。记忆用例若不排除，主线分母 44 → 49，
+# 护栏轮与 R8（report-20260905-142017.json）的对比同样会断。
 eval-mainline:
 	EVAL_JUDGE_MODEL=longcat-2.0 uv run python -u scripts/eval_regression.py --exclude-tag redteam,mem
 
@@ -119,9 +119,9 @@ eval-smoke:
 variance:
 	uv run python scripts/eval/variance.py
 
-# token 成本 / 轮延迟：读流水的 usage 与 latency_ms（二十三期清单 2）。
+# token 成本 / 轮延迟：读流水的 usage 与 latency_ms。
 # 零模型成本（只读已落盘的流水），不进 check——它是报告不是判据。
-# usage 字段自二十三期起才有；旧流水只出延迟读数，token 覆盖面会被点名。
+# usage 字段是后来才加的；更早的流水只出延迟读数，token 覆盖面会被点名。
 cost:
 	uv run python scripts/eval/audit_cost_latency.py --report latest
 
