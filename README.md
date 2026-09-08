@@ -2,66 +2,30 @@
 
 [![check](https://github.com/emmmdty/heng-agent/actions/workflows/check.yml/badge.svg)](https://github.com/emmmdty/heng-agent/actions/workflows/check.yml)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![AgentScope](https://img.shields.io/badge/AgentScope-2.x-orange)
 ![tests](https://img.shields.io/badge/tests-1%2C375%20passed-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 买家一句自然语言诉求，Agent 完成品类洞察、商品检索、到手价计算、组合优化和下单交易，
 全过程通过 WebSocket 事件流实时可见。基于 **AgentScope 2.0**，DDD 洋葱架构。
 
-> **English TL;DR** — A cross-border e-commerce shopping agent on **AgentScope 2.0** with a DDD onion
-> architecture: category insight → product retrieval → landed price → basket optimization → ordering,
-> every step visible in real time over a WebSocket event stream. The real substance is
-> **agent credibility engineering**: deterministic criteria + tiered evaluation + statistical
-> certification, so every "it got better" has provenance, criteria and a reproduction command.
-> **1,375 unit tests green.**
+真正花功夫的地方不是"让 Agent 能跑"，而是 **Agent 可信度工程**——
+让每一个"变好了"都有出处、判据和复现命令。
 
-真正花功夫的地方不是"让 Agent 能跑"，而是 **Agent 可信度工程**：
-确定性判据 + 分级评测 + 统计认证，让每一个"变好了"都有出处、判据和复现命令。
-
-## 这个项目在解决什么
-
-LLM Agent 很容易做出一个"看起来能用"的 demo，难的是回答三个问题：
-
-1. **它说的数字是真的吗？** —— 模型会把工具返回的两个价格相加当成组合总价，每个加数都有出处、结果"看着自洽"，语义判据抓不住。
-2. **"变好了"是真的变好了吗？** —— LLM judge 在近平局内容上方差极高，一轮跑分的涨落可能只是噪声。
-3. **护栏真的能拦住东西吗？** —— 一道从未红过的门禁，和一行注释没有区别。
-
-这个仓库的答案是：**能确定性判定的行为，就不要留给 judge**；
-**judge 不可信时，拒绝从它的读数下结论**；**每道门禁都要有"真红一次"的证据**。
-
-## 核心读数
-
-| 维度 | 读数 | 复现 |
-|---|---|---|
-| 行为评测 | 主线 44 条：基线 **42/44 PASS**（judge 均分 0.9602）；skill-on 轮 **42/44 · 均分 0.9545**（结算口径：同臂复跑恢复的 ERROR 案计入） | `make eval-mainline` |
-| 记忆层认证 | 敏感层 48 对成对比较，decisive **33**，注入开显著优 **p=0.000324**，A 臂胜出份额 bootstrap CI [0.053, 0.379]（不含 0.5，与显著性方向一致），三重认证全过 | `scripts/eval/mem_layer_readout.py` |
-| Skill 渐进加载 | 每意图 prompt P50 **10,738（-37.1%）**，五护栏全过（PASS / 均分 / token / 工具调用率 / 延迟） | `scripts/eval/tool_call_rate.py` |
-| 检索质量 | Recall@8 **0.967** / MRR 0.929（105 条标注，hybrid_rerank，六档对比） | `scripts/eval/run_product_recall.py --compare-strategies` |
-| 数字可信度 | 无出处金额率 **4.0%**（R8 整轮：456 处金额中 18 处，全为自行算术）；确定性判据门禁零 LLM 成本 | `make check` |
-| 工程基线 | **1,375 单测全绿**（本机约 1 分钟）；CI = `check-ci` 三项门禁 | `uv run pytest` |
-
-## 架构
-
-<p align="center">
-  <img src="assets/architecture.png" alt="架构图" width="900">
-</p>
-
-左侧是 DDD 洋葱的运行时主链路；右侧的**可信度工程**与主链路同等大小——
-评测不是附属品，是与交付能力并行的一等公民：会话流水喂评测，判读结论反哺提示词与判据。
-
-### 效果预览
+*A cross-border e-commerce shopping agent on AgentScope 2.0 with DDD onion architecture —
+agent credibility engineering: every number has provenance, criteria and a reproduction command.*
 
 <p align="center">
   <img src="assets/screenshot-chat.png" alt="对话 + 商品卡 + 事件时间线" width="900">
 </p>
+<p align="center"><sub>一条意图的实时全景：左侧对话与商品卡，右侧事件时间线（工具调用 / token 用量 / 最终回复）</sub></p>
 
-一条意图的实时全景：左侧对话与商品卡，右侧事件时间线（工具开始/完成、token 用量、最终回复）。
-检索走默认 hybrid_rerank 档；embedding / reranker 不可用时自动降级并在事件流里如实标注。
+## 核心特性
 
-<p align="center">
-  <img src="assets/screenshot-timeline.png" alt="事件时间线" width="380">
-</p>
+- **全链路购物 Agent**：品类洞察 → 混合检索 + 精排 → 到手价（汇率 / 关税 / 运费）→ 组合优化 → 下单 / 查询 / 取消，
+  含长期记忆（偏好沉淀与撤回）
+- **过程实时可见**：token.delta / tool.invoke / number.unsourced / model.fallback……每个事件订阅即得
+- **可信度工程**：8 类确定性判据 + 八项零 LLM 成本提交门禁 + 分级评测 + 统计认证——评测与交付能力并行的一等公民
+- **韧性可检验**：检索三级降级链、模型回退链、故障注入端到端验证，1,375 单测全绿（本机约 1 分钟）
 
 ## 快速开始
 
@@ -85,7 +49,35 @@ uv run python scripts/smoke_e2e.py --query "帮我找一款 300 块以内、抗�
 本地开发可 `cp .env.example .env` 兜底（已 gitignore，勿提交真实密钥）；环境变量优先于 `.env`。
 检索依赖（embedding / reranker）可空跑降级链，自建方案见 [.env.example](.env.example) 注释。
 
+## API
+
+| 端点 | 说明 |
+|---|---|
+| `POST /commerce/intents` | 提交买家自然语言意图（同步返回最终回复） |
+| `WS /commerce/events` | 订阅会话事件流（token.delta / tool.invoke / number.unsourced / model.fallback …） |
+| `GET /commerce/orders/{id}?buyer_id=` | 查询订单（归属校验：非本人与不存在同读数） |
+| `POST /commerce/orders/{id}/cancel` | 取消订单（body 带 buyer_id，归属校验） |
+| `GET /health` | 健康检查（`?deep=1` 真探 embedding / reranker） |
+
+## 架构
+
+<p align="center">
+  <img src="assets/architecture.png" alt="架构图" width="900">
+</p>
+
+左侧是 DDD 洋葱的运行时主链路；右侧的**可信度工程**与主链路同等大小——
+评测不是附属品：会话流水喂评测，判读结论反哺提示词与判据。
+
 ## 可信度工程
+
+LLM Agent 很容易做出一个"看起来能用"的 demo，难的是回答三个问题：
+
+1. **它说的数字是真的吗？** —— 模型会把工具返回的两个价格相加当成组合总价，每个加数都有出处、结果"看着自洽"，语义判据抓不住。
+2. **"变好了"是真的变好了吗？** —— LLM judge 在近平局内容上方差极高，一轮跑分的涨落可能只是噪声。
+3. **护栏真的能拦住东西吗？** —— 一道从未红过的门禁，和一行注释没有区别。
+
+这个仓库的答案是：**能确定性判定的行为，就不要留给 judge**；
+**judge 不可信时，拒绝从它的读数下结论**；**每道门禁都要有"真红一次"的证据**。
 
 ### 分级评测体系（`eval/`）
 
@@ -95,13 +87,6 @@ uv run python scripts/smoke_e2e.py --query "帮我找一款 300 块以内、抗�
 | A/B 认证轮 | 提示词 / 记忆注入两臂回放，成对比较 | 位置互换 + 多数投票 + 双 judge + 阳性对照；**判读口径预登记**，防事后挑数 |
 | 确定性判据门禁 | 金额出处、算式自洽、组合错加、知识库出处、订单归属、召回指标 | judge 看不到工具返回——"数值对不对"归 judge，"出处属不属实"归判据；每道门禁"真红一次 + 零误报"留档 |
 | Bad-case 飞轮 | 失败自动采集 → 指纹去重 → **人工分诊** → 回归集 | 中间留人工是刻意的：不加分诊就扩测试集，等于把噪声固化成基准 |
-
-提交前门禁——七项确定性审计脚本全部零 LLM 成本、十几秒；`make check` 再加全量单测约 1 分钟：
-
-```bash
-make check          # pytest + 标注集自检 + 用例自检 + 金额出处 + 算式自洽 + 收货字段 + 组合总价 + 知识库出处
-make check-ci       # CI 档（.github/workflows/check.yml，前三项）
-```
 
 ### 两个真实的方法论问题
 
@@ -117,6 +102,24 @@ make check-ci       # CI 档（.github/workflows/check.yml，前三项）
 模型推不出来）。每个加数都有工具出处、结果"看着自洽"，judge 判 PASS。语义判据抓不住"自行推导"，
 算术判据抓得住。这条缝现在由确定性判据 `basket_misadd` 把守，
 且"两件分开买合计 ¥518"这种合法说法靠语境判定不误报。
+
+### 读数与复现
+
+| 维度 | 读数 | 复现 |
+|---|---|---|
+| 行为评测 | 主线 44 条：基线 **42/44 PASS**（judge 均分 0.9602）；skill-on 轮 **42/44 · 均分 0.9545**（结算口径：同臂复跑恢复的 ERROR 案计入） | `make eval-mainline` |
+| 记忆层认证 | 敏感层 48 对成对比较，decisive **33**，注入开显著优 **p=0.000324**，A 臂胜出份额 bootstrap CI [0.053, 0.379]（不含 0.5，与显著性方向一致），三重认证全过 | `scripts/eval/mem_layer_readout.py` |
+| Skill 渐进加载 | 每意图 prompt P50 **10,738（-37.1%）**，五护栏全过（PASS / 均分 / token / 工具调用率 / 延迟） | `scripts/eval/tool_call_rate.py` |
+| 检索质量 | Recall@8 **0.967** / MRR 0.929（105 条标注，hybrid_rerank，六档对比） | `scripts/eval/run_product_recall.py --compare-strategies` |
+| 数字可信度 | 无出处金额率 **4.0%**（R8 整轮：456 处金额中 18 处，全为自行算术）；确定性判据门禁零 LLM 成本 | `make check` |
+| 工程基线 | **1,375 单测全绿**（本机约 1 分钟）；CI = `check-ci` 三项门禁 | `uv run pytest` |
+
+提交前门禁——七项确定性审计脚本全部零 LLM 成本、十几秒；`make check` 再加全量单测约 1 分钟：
+
+```bash
+make check          # pytest + 标注集自检 + 用例自检 + 金额出处 + 算式自洽 + 收货字段 + 组合总价 + 知识库出处
+make check-ci       # CI 档（.github/workflows/check.yml，前三项）
+```
 
 ## 检索：六档实测，不宣称混合召回是主功臣
 
@@ -152,16 +155,6 @@ make check-ci       # CI 档（.github/workflows/check.yml，前三项）
 - **Skill 渐进加载**：flag 门控（默认关 = 行为与指纹逐字节不变），死重工具移出 +
   system prompt 按阶段替换式拼装，基线提示词一字不动留作对照。
 
-## API
-
-| 端点 | 说明 |
-|---|---|
-| `POST /commerce/intents` | 提交买家自然语言意图（同步返回最终回复） |
-| `WS /commerce/events` | 订阅会话事件流（token.delta / tool.invoke / number.unsourced / model.fallback …） |
-| `GET /commerce/orders/{id}?buyer_id=` | 查询订单（归属校验：非本人与不存在同读数） |
-| `POST /commerce/orders/{id}/cancel` | 取消订单（body 带 buyer_id，归属校验） |
-| `GET /health` | 健康检查（`?deep=1` 真探 embedding / reranker） |
-
 ## 项目结构
 
 ```text
@@ -181,7 +174,7 @@ app/
 eval/                  # cases.yaml（60 用例）+ 召回标注集（105/22）+ 评测脚本
 knowledge/             # 品类洞察知识文档（Markdown，启动时幂等入库）
 frontend/              # React 18 + Vite：对话流 + 商品卡 + 事件时间线
-assets/                # 架构图与其生成脚本
+assets/                # 架构图、效果截图与其生成脚本
 ```
 
 ## 开发与测试
