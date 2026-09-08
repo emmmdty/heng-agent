@@ -3,9 +3,9 @@
 
 从 .env / 环境变量读取全部配置，Infrastructure 之外不允许直接触碰 os.environ。
 
-二期增量：embedding / Qdrant / Reranker / Tavily / OTLP / 数据目录。
-三期增量：品类知识库 collection、Context 工程（压缩阈值/结果截断/Token 预算）、工具超时与熔断、CORS。
-四期增量：模型回退与网关配额闸门（并发上限/请求间隔/重试次数）。
+v2 增量：embedding / Qdrant / Reranker / Tavily / OTLP / 数据目录。
+v3 增量：品类知识库 collection、Context 工程（压缩阈值/结果截断/Token 预算）、工具超时与熔断、CORS。
+v4 增量：模型回退与网关配额闸门（并发上限/请求间隔/重试次数）。
 可选能力全部按"空值即关闭/降级"设计，保证零外部依赖也能启动。
 """
 from __future__ import annotations
@@ -43,38 +43,38 @@ class Settings:
     otlp_endpoint: str  # 空 = 不启用 TracingMiddleware
     # ---- 数据目录（模块三）----
     data_dir: Path
-    # ---- 三期：品类知识库 ----
+    # ---- v3：品类知识库 ----
     category_kb_collection: str
-    # ---- 三期：Context 工程 ----
+    # ---- v3：Context 工程 ----
     context_size: int  # 模型上下文窗口，压缩阈值按此比例计算
     tool_result_limit: int  # 单个工具结果字符上限（商品卡 JSON 较大，需比默认收紧）
     reply_token_budget: int  # 0 = 不启用 Token 预算护栏
-    # ---- 三期：工具韧性 ----
+    # ---- v3：工具韧性 ----
     tool_failure_threshold: int  # 连续失败达阈值后熔断
     tool_circuit_reset_seconds: float  # 熔断后多久转半开探测
-    # ---- 三期：前端 ----
+    # ---- v3：前端 ----
     cors_origins: list[str]
-    # ---- 四期：模型回退与网关配额闸门 ----
+    # ---- v4：模型回退与网关配额闸门 ----
     # 这组给默认值：前面几期每次扩字段都会打断测试里手工构造的 Settings，
     # 新增可选配置一律带默认值，避免同样的修改成本反复发生。
     llm_fallback_model: str = ""  # 空 = 不回退，重试用尽直接报错
     llm_max_concurrency: int = 2  # 同时在飞的模型请求上限
     llm_min_interval_seconds: float = 1.0  # 相邻请求起跑最小间隔，治速率爬升过快
     llm_max_retries: int = 2  # 瞬时故障重试次数（指数退避）
-    # ---- 四期：存储 ----
+    # ---- v4：存储 ----
     # 默认 SQLite（零外部依赖，落在 DATA_DIR/heng.db）。
     # 换服务型数据库需自行装异步驱动（aiomysql / asyncpg）并改此 URL，本仓未验证。
-    # 特殊值 "file" = 退回三期的 JSON 文件存储（无数据库）
+    # 特殊值 "file" = 退回 v3 的 JSON 文件存储（无数据库）
     database_url: str = ""
-    # ---- 四期：Redis 缓存 ----
+    # ---- v4：Redis 缓存 ----
     redis_url: str = ""  # 空 = 全部缓存能力关闭（零外部依赖）
     semantic_cache_enabled: bool = True  # Redis 可用时是否开启语义缓存
     semantic_cache_threshold: float = 0.95  # 余弦相似度阈值，调低会提高答非所问风险
-    # ---- 四期：队列削峰 ----
+    # ---- v4：队列削峰 ----
     queue_enabled: bool = True  # 需同时配上 REDIS_URL 才生效；否则意图在 API 进程内直跑
     queue_wait_seconds: float = 300.0  # 同步接口等待队列结果的上限
     worker_concurrency: int = 2  # 单个 worker 同时处理的任务数
-    # ---- 五期：运行时护栏（Harness / 安全 / 预算）----
+    # ---- v5：运行时护栏（Harness / 安全 / 预算）----
     # 默认值取向：零成本的纯本地护栏默认开，
     # 会额外调模型或改变模型选择的一律默认关，必须是显式开启的选择。
     harness_enabled: bool = True  # 单步断言 + 循环检测 + L3 内容过滤
@@ -96,16 +96,16 @@ class Settings:
     # 逐字节一致；开 = Task* 死重移出 toolkit、system prompt 按
     # app/skills/definitions.yml 阶段化拼装（指纹纳入 definitions 哈希）。
     skill_loading_enabled: bool = False
-    # 进程内会话缓存上限（LRU）。0 = 不限（十七期之前的行为）。
+    # 进程内会话缓存上限（LRU）。0 = 不限（v17 之前的行为）。
     # 每个缓存项是一个 Agent + 整段对话上下文，不设限时内存随会话数单调增长。
     session_cache_max: int = 200
-    # ---- 二十五期任务 A：提示词 A/B 分流 ----
+    # ---- v25 任务 A：提示词 A/B 分流 ----
     # 本进程跑的是哪个提示词变体。空 = 基线（默认提示词，heng.yml 原文）。
     # A/B 两臂各起一个实例：基线臂不设，候选臂设 PROMPT_VARIANT=<变体名>，
     # /health 原样上报，评测脚本抄进报告——变体名是归因主键，
     # 指纹（对 heng.yml 内容哈希）是内容校验码，两者缺一不可。
     prompt_variant: str = ""
-    # ---- 二十期：向量库落盘位置与证据落盘位置解耦 ----
+    # ---- v20：向量库落盘位置与证据落盘位置解耦 ----
     # Qdrant 本地嵌入模式是单进程文件锁，起第二个实例就得换一份向量库存储。
     # 此前唯一的办法是整个 DATA_DIR 换掉——而**流水也跟着换走了**：
     # 报告留在仓库 eval/ 里、指着一个会话结束就被清理的临时目录，
@@ -161,15 +161,19 @@ def load_settings() -> Settings:
         reply_token_budget=int(os.getenv("REPLY_TOKEN_BUDGET", "0")),
         tool_failure_threshold=int(os.getenv("TOOL_FAILURE_THRESHOLD", "3")),
         tool_circuit_reset_seconds=float(os.getenv("TOOL_CIRCUIT_RESET_SECONDS", "60")),
+        # 127.0.0.1 与 localhost 是两个 origin 字符串：只放行一个，用另一个开前端时
+        # 预检 OPTIONS 直接 400，而页面上只表现为"发出去没反应"。两个都给。
         cors_origins=[
             origin.strip()
-            for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+            for origin in os.getenv(
+                "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+            ).split(",")
             if origin.strip()
         ],
         # 实测 qwen3.7-plus 配额池极紧（单发一条也可能 429），默认配上备用模型保底，
         # 重试用尽后自动回退并发 model.fallback 事件，不静默降级
         llm_fallback_model=os.getenv("LLM_FALLBACK_MODEL", "longcat-2.0"),
-        # 默认 2 而不是 1：三期真并行 fork 实测 1.84x 加速，设 1 会把并行收益完全抹掉
+        # 默认 2 而不是 1：v3 真并行 fork 实测 1.84x 加速，设 1 会把并行收益完全抹掉
         llm_max_concurrency=int(os.getenv("LLM_MAX_CONCURRENCY", "2")),
         llm_min_interval_seconds=float(os.getenv("LLM_MIN_INTERVAL_SECONDS", "1.0")),
         llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "2")),
