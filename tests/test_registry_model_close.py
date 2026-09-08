@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""会话淘汰时显式关闭模型客户端（soak 内存分析的修复，二十三期清单 7）
+"""会话淘汰时显式关闭模型客户端（soak 内存分析的修复）
 
-**为什么需要这个**（诊断证据链，见 docs/交接文档 soak 段）：
+**为什么需要这个**（诊断证据链）：
 
 每会话的 model 链 = 主模型 + 备用模型，各持一个 openai.AsyncOpenAI
 （内含 httpx.AsyncClient；1 个 client 4 个 transport + 4 个 SSLContext）。
