@@ -62,7 +62,10 @@ uv run python scripts/smoke_e2e.py --query "帮我找一款 300 块以内、抗�
 ## 架构
 
 <p align="center">
-  <img src="assets/architecture.png" alt="架构图" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.png">
+    <img src="assets/architecture.png" alt="架构图" width="900">
+  </picture>
 </p>
 
 左侧是 DDD 洋葱的运行时主链路；右侧的**可信度工程**与主链路同等大小——
