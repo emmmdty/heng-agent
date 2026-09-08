@@ -6,8 +6,8 @@ Agent 第 2 步明确写出应税基数 `$886.34 − $800.00 = $86.34`，
 第 4 步却写成 `关税 = $886.34 × 7.5% = $6.48`——**乘错了数，而结果是对的**
 （6.48 来自工具）。886.34 × 7.5% 实际是 66.48。
 
-与十期实测的 `1,199 × 12% ≈ ¥3.48` 是同一个形状，中间隔着两次修
-（十一期补 taxable_base_major 字段、写进提示词），**都没能拦住**。
+与 v10 实测的 `1,199 × 12% ≈ ¥3.48` 是同一个形状，中间隔着两次修
+（v11 补 taxable_base_major 字段、写进提示词），**都没能拦住**。
 提示词拦不住的，就该由确定性判据接管。
 
 **与金额出处校验互补**：这次错的三个数（886.34 / 7.5% / 6.48）**都有工具出处**，
@@ -49,7 +49,7 @@ class TestConsistency:
         assert report.problems[0].expected == pytest.approx(66.4755, abs=0.01)
 
     def test_the_phase_ten_defect_is_caught(self):
-        """十期实测的那一行——同一个形状，隔了九期还在。"""
+        """v10 实测的那一行——同一个形状，隔了九个版本还在。"""
         report = check_arithmetic("关税 1,199 × 12% ≈ ¥3.48")
         assert not report.ok
 
@@ -83,7 +83,7 @@ class TestProblemDescription:
 
 
 class TestWiring:
-    """接线判据：写好了没人调用等于没写（踩坑 37 / 42 两次教训）。"""
+    """接线判据：写好了没人调用等于没写（两次教训）。"""
 
     def test_orchestrator_calls_it_at_turn_end(self):
         import inspect

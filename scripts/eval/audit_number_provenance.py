@@ -17,7 +17,7 @@
     suspected_difference   约等于两数之差       —— 典型是"预算还剩多少"
     unsourced              找不到成因
 
-**暴露面双指标**（二十三期清单 1）：无出处金额数与"疑似自行算术数"
+**暴露面双指标**（v23）：无出处金额数与"疑似自行算术数"
 （suspected_sum / difference / basket_misadd 的候选数）**分开呈现**。
 比率指标有一个 Goodhart 口子——模型少写解释性算术，分子分母一起缩，
 比率照样好看，但那不是修复，是少干活。两个数一起读才能分辨
@@ -93,7 +93,7 @@ def sessions_from_report(report: dict) -> set[str]:
     sessions = {r["session_id"] for r in results if r.get("session_id")}
     if not sessions:
         raise SystemExit(
-            "报告里没有 session_id（九期之前的报告不记这个字段）。\n"
+            "报告里没有 session_id（v9 之前的报告不记这个字段）。\n"
             "  重跑一轮即可：make eval-smoke\n"
             "  或去掉 --report 扫全目录（读数会被历史流水污染，不要当门禁用）。",
         )
@@ -136,7 +136,7 @@ def gate_verdict(
     小样本时**不判定**（照常打印发现），而不是放宽阈值：
     放宽会让整轮的真劣化一起漏过去。
 
-    同一条读数纪律在踩坑 30 里写过（n=105 时 1 条 query ≈ 0.95pt），
+    同一条读数纪律早先写过（n=105 时 1 条 query ≈ 0.95pt），
     那次写在文档里，这次写进判据。
     """
     total = summary["total_amounts"]
@@ -167,7 +167,7 @@ def summarize(audits: list[SessionAudit]) -> dict:
     total = sum(item.total_amounts for item in audits)
     unsourced = sum(len(item.unsourced) for item in audits)
     kinds = Counter(finding.kind for item in audits for finding in item.unsourced)
-    # 暴露面双指标（二十三期清单 1）：自行算术的暴露面 = 判成 sum/difference/
+    # 暴露面双指标（v23）：自行算术的暴露面 = 判成 sum/difference/
     # basket_misadd 的部分；两者之差是"连成因都找不到"的纯无出处。
     arithmetic = sum(count for kind, count in kinds.items() if kind in _ARITHMETIC_KINDS)
     return {

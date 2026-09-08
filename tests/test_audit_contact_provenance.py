@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """收货字段出处的离线审计与门禁
 
-二十期的教训写得很直白：**判据只做"检测"、没做"暴露"，在真实评测里等价于不存在**。
+v20 的教训写得很直白：**判据只做"检测"、没做"暴露"，在真实评测里等价于不存在**。
 `arith.inconsistent` 当时在 app 之外零消费方——不进门禁、不进报告、没有审计脚本，
 而它写进去的流水正好被另一条缺陷删掉了。
 
@@ -11,7 +11,7 @@
 **门禁口径与算式自洽相同，与金额出处不同：不设阈值、不设样本量下限，命中一处即红。**
 无出处金额率是比率指标（对已有出处数字的修辞取整本来就占几个点），小样本不判定是对的；
 而"编造了一个收货地址"是能指着原文说"这个地址不存在"的事实错误，
-"发生了没有"不是"高了低了"（踩坑 45）。
+"发生了没有"不是"高了低了"。
 
 **扫的是回复，不是订单**：地址被写进回复就已经把错误信息给了买家，
 等它进到下单入参才拦就晚了（而入参那一层由 `order_provenance` 管，
@@ -71,7 +71,7 @@ class TestTraceCarriesContactWarnings:
 
 class TestSessionAudit:
     def test_fabricated_address_is_caught(self, tmp_path):
-        """二十期实测那一轮的复现：只检索过商品，地址是编的。"""
+        """v20 实测那一轮的复现：只检索过商品，地址是编的。"""
         path = _write_trace(
             tmp_path, "eval-clarify-000001",
             "帮我下单 2 个 LumenGo 露营灯军绿色。", [FABRICATED],
@@ -113,7 +113,7 @@ class TestGate:
         assert not verdict.passed
 
     def test_no_claims_is_not_reported_as_all_clean(self, ):
-        """0 个断言算出的"0 处问题"不能冒充满分（踩坑 33 的同一条）。"""
+        """0 个断言算出的"0 处问题"不能冒充满分（同一条纪律）。"""
         verdict = gate_verdict({"sessions": 40, "claims": 0, "unsourced": 0})
         assert verdict.passed and "无从判定" in verdict.reason
 

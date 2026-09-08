@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""模型层的 llm.usage 事件（二十三期清单 2 的地基）
+"""模型层的 llm.usage 事件（v23 的地基）
 
 任务 2 要"读 data/conversations/ 流水的 usage 与 latency_ms"，但流水里
 **从来没有 usage**：模型层的 token 只进了内存预算账本（_charge_budget），

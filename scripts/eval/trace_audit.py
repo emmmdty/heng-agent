@@ -34,7 +34,7 @@ from app.application.harness.number_provenance import (  # noqa: E402
 
 # 运行时护栏发出的告警事件类型（离线侧据此区分"当时就发现了"与"这次补判才发现"）
 RUNTIME_WARNING_EVENT = "number.unsourced"
-# 算式自洽校验的告警（十九期）。与上面那条分开收：两者抓的是互补的两类错，
+# 算式自洽校验的告警（v19）。与上面那条分开收：两者抓的是互补的两类错，
 # 混在一起会让"这次补判才发现"的判断跟着串味。
 ARITHMETIC_WARNING_EVENT = "arith.inconsistent"
 CONTACT_WARNING_EVENT = "contact.unsourced"

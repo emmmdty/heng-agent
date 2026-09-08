@@ -77,7 +77,7 @@ class ConfirmationTracker:
         seen = self._turns.get(session_id, 0)
         if seen == 0:
             # 没有轮次记录：会话可能是从 AgentState 快照恢复的（进程重启后
-            # 内存里的计数为空）。沿用十四期「有证据才硬拒」的纪律——
+            # 内存里的计数为空）。沿用 v14「有证据才硬拒」的纪律——
             # 拿不到证据就降级为警告，否则重启一次会误杀所有正在进行的下单。
             outcome.warnings.append(
                 "注意：本会话没有轮次记录（可能是服务重启后恢复的），"

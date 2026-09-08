@@ -179,7 +179,7 @@ class TestClassificationCost:
 class TestTaxableBaseCountsAsMoney:
     """应税基数字段要进金额池，否则由它派生的数字只会被归成 `unsourced`。
 
-    十一期给 `to_dict()` 补了 `taxable_base_major`（超出免税额度、实际计征的部分）。
+    v11 给 `to_dict()` 补了 `taxable_base_major`（超出免税额度、实际计征的部分）。
     出处判定看的是全部数字，所以有没有出处不受影响；但**成因推断**只在金额字段上做，
     字段名不匹配 `_MONEY_FIELD` 时，"3.72 是它自己从 153.72 − 150 减出来的"
     这条线索就丢了——而这类线索正是"判据指向工具该补什么"的依据。
@@ -189,7 +189,7 @@ class TestTaxableBaseCountsAsMoney:
         sources = collect_sources([{"taxable_base_major": 29.0, "tariff_rate": 0.12}])
         assert 29.0 in sources.money
         # 费率不是金额：名字里带 rate 的一律挡在池外，否则会编出
-        # "0.12 + x" 这种荒唐成因（八期教训）
+        # "0.12 + x" 这种荒唐成因（v8 教训）
         assert 0.12 not in sources.money
 
     def test_difference_from_taxable_base_is_explained(self):
@@ -200,7 +200,7 @@ class TestTaxableBaseCountsAsMoney:
     def test_budget_arithmetic_fields_enter_the_money_pool(self):
         """组合优化回的预算算术同样是钱。
 
-        这三个字段（budget / remaining / saving）是十一期 optimize_basket_tool
+        这三个字段（budget / remaining / saving）是 v11 optimize_basket_tool
         专门为"预算还剩多少""一起买省多少"补的出处；名字不匹配金额字段时，
         由它们派生的数会失去成因线索。
         """
@@ -217,7 +217,7 @@ class TestTaxableBaseCountsAsMoney:
 class TestClosestExplanationWins:
     """成因推断必须报**最贴近**的那个算式，不能被一个擦边命中的候选抢走。
 
-    要防的问题（十九期实测，data/conversations/eval-conflict-budget-spec-9c422d.jsonl）：
+    要防的问题（v19 实测，data/conversations/eval-conflict-budget-spec-9c422d.jsonl）：
     买家说"预算 200 元"，模型列了一张"超出预算"的表，三个差额全部被解释错了——
 
         ¥99        报 "9 + 89"        真相是 299 − 200
@@ -226,7 +226,7 @@ class TestClosestExplanationWins:
 
     错的代价不是"少说了一句"，而是**把人指向错误的根因**：读报告的人会去查
     199 那款登山杖为什么进了算式，而真正该看的是"模型拿预算做减法"。
-    一个错的解释比没有解释更坏（交接文档第七节经验 9）。
+    一个错的解释比没有解释更坏（一条经验）。
 
     两处成因叠在一起：
       1. 候选一命中就 return，没有在多个候选里挑误差最小的；
@@ -343,7 +343,7 @@ class TestClosestExplanationWins:
         assert report.unsourced[0].explain == "250 - 228.15"
 
 
-# —— basket_misadd：组合总价错加（二十二期） ——
+# —— basket_misadd：组合总价错加（v22） ——
 #
 # 缺陷形状（quote_basket_tool docstring 记录的实测）：买家问"两个一起多少钱"，
 # 模型把两个单品 landed_price 相加当组合总价——每个加数都来自工具，
@@ -411,7 +411,7 @@ class TestBasketMisadd:
 
     def test_no_basket_quote_stays_a_clue(self):
         """工具没报过组合价就没有 ground truth——"一起买到手 ¥518"不定罪
-        （这正是二十期 judge 判 PASS 的那一轮的处境）。"""
+        （这正是 v20 judge 判 PASS 的那一轮的处境）。"""
         sources = _sources([_LANDED_HITS])
         report = check_reply("两个一起买到手 ¥518。", sources)
         assert [item.kind for item in report.unsourced] == ["suspected_sum"]

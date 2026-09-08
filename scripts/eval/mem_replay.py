@@ -7,7 +7,7 @@ prompt_variant 用 mem-inject-off / mem-inject-on 自报臂身份。判段复用
 工具链零新造：run_ab_pipeline（product_prefix="mem" → 产物 eval/mem-* 前缀
 分桶）+ judge_pair_rows / ab_stats / make_judge_call 全套。
 
-臂拓扑（设计决策回写在二十六期任务书第四节；两实例而非同服务两轮——
+臂拓扑（设计决策回写在 记忆回放的设计决策；两实例而非同服务两轮——
 注入开关是进程级的，切开关必须重启 = 两实例）：
 
     # 臂 B（注入开，8014）
@@ -22,7 +22,7 @@ prompt_variant 用 mem-inject-off / mem-inject-on 自报臂身份。判段复用
         PREFERENCE_INJECTION_CORRUPT=1 \
         uv run uvicorn app.presentation.server:app --port 8016
 
-两臂 DATA_DIR 都用仓库默认（流水不能落临时目录——二十三期教训）；
+两臂 DATA_DIR 都用仓库默认（流水不能落临时目录——v23 教训）；
 per-arm buyer 派生（-ab{arm}k{n}）已隔离两臂的记忆写入。
 
 用法（烧 token 顺序：--only 先导 → 小样本 → 放大）：
@@ -61,9 +61,9 @@ from scripts.eval.ab_run import (  # noqa: E402
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EVAL_DIR = PROJECT_ROOT / "eval"
 
-# 预登记用例子集 = 主指标的人群（冻结在交接文档「五之一」任务 B 指标表）：
+# 预登记用例子集 = 主指标的人群（冻结在预登记的任务 B 指标表）：
 # 写入 / 跨会话读取 / 会话内偏好冲突 / 撤回链（撤回前写两条 + 撤回后验证）
-# + 二十七期 B1 敏感层扩容（共享 setup 写两条偏好 + 四条两臂可分的敏感用例，
+# + v27 B1 敏感层扩容（共享 setup 写两条偏好 + 四条两臂可分的敏感用例，
 # 分层口径回写见同表【口径回写 · 2026-09-06】块）。
 # 顺序即执行顺序：preference-inject-setup 必须先于四条依赖它的用例。
 # 增删走回写通道，不在脚本里悄悄改。
@@ -86,7 +86,7 @@ ARM_EXPECT = {
     "B": {"variant": "mem-inject-on"},
 }
 
-# 阳性对照臂语义（已知更差——工具有效性自证，模式照抄二十五期）：
+# 阳性对照臂语义（已知更差——工具有效性自证，模式照抄 v25）：
 # A=污染注入（服务以 PREFERENCE_INJECTION_CORRUPT=1 起服：注入层每轮替换为
 # 错误偏好，store 保持真实，Agent 无法用 forget 自愈——第一版"矛盾注入"
 # 的 store seed 被 Agent 主动撤回，见 M2 执行实录）；变体名含 weaker 供
@@ -140,7 +140,7 @@ def select_replay_cases(cases: list[dict], only: str | None = None) -> list[dict
     if missing:
         raise SystemExit(
             f"预登记用例在 cases.yaml 里找不到（被改名或删除？）：{'、'.join(missing)}\n"
-            "人群冻结在指标表——要改先回写二十六期任务书第四节。"
+            "人群冻结在指标表——要改先回写 记忆回放的设计决策。"
         )
     selected_ids = list(PREFERENCE_PRESET_IDS)
     if only:

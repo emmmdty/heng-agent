@@ -5,7 +5,7 @@
     - 会话：DATA_DIR/sessions/{session_id}.json（AgentState 全量快照，重启恢复多轮对话）
     - 对话：DATA_DIR/conversations/{session_id}.jsonl（对话流水 + 事件轨迹）
 
-四期把 session/conversation 的方法改成 async 以对齐端口——文件 IO 本身是同步的，
+v4 把 session/conversation 的方法改成 async 以对齐端口——文件 IO 本身是同步的，
 但端口按数据库实现的需要定义，这样换实现不必改调用方。
 """
 from __future__ import annotations

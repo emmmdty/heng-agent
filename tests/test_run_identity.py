@@ -44,10 +44,10 @@ class TestDescribeRun:
 class TestCodeIdentity:
     """要防的问题：**服务进程比磁盘上的代码旧，而没有任何东西会报警。**
 
-    九期实测踩到：uvicorn 16:43:06 启动，`tariff_schedule.py` 16:49:20 修完，
+    v9 实测踩到：uvicorn 16:43:06 启动，`tariff_schedule.py` 16:49:20 修完，
     进程再没重启过。之后跑的两条定向回归打的都是这个装着旧代码的服务，
     修复加的 `de_minimis_threshold_major` 一次也没出现在工具返回里——
-    交接文档预告的"如果没变说明还有第三条路径"于是被误导向了代码，
+    当时预判的"如果没变说明还有第三条路径"于是被误导向了代码，
     而代码是对的（408 单测全绿，因为单测读的是磁盘上的新代码）。
 
     单测绿 + 评测拿到旧行为可以同时成立，`/health` 也照样报着一模一样的配置行。
@@ -105,7 +105,7 @@ class TestCodeIdentity:
 class TestHealthWiring:
     """钉住接线本身。
 
-    七期的教训（设计演进记录）：BM25 索引只在 `scripts/eval/*` 里构造、从没接进
+    v7 的教训（设计演进记录）：BM25 索引只在 `scripts/eval/*` 里构造、从没接进
     `composition.py`，评测选出的最优配置根本没上线，而"忘了接线"和"故意关掉"
     外观完全一样，没有任何告警。判据做得再对，不接进 /health 就等于没做。
 

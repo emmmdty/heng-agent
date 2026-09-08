@@ -29,7 +29,7 @@ class TestGrouping:
         assert list(scores.values()) == [[1.0, 0.8]]
 
     def test_different_config_does_not_group(self):
-        """模型/提示词/精排任一不同，分数就不可比（十期换 ground_truth 的教训）。"""
+        """模型/提示词/精排任一不同，分数就不可比（v10 换 ground_truth 的教训）。"""
         scores = collect_scores([
             _report("配置A", [_result("c1", 1.0)]),
             _report("配置B", [_result("c1", 0.8)]),
@@ -95,8 +95,8 @@ class TestRequireFingerprint:
 class TestRunLevelMeans:
     """整轮均分的波动——人们引用的就是这个数，而单条散布回答不了它。
 
-    分组键的第二处修正（二十三期清单 4）：键里原本还含"有效条数"，
-    而 ERROR 数不同的两轮有效条数就不同——二十期 42 条与二十二期 43 条
+    分组键的第二处修正（v23）：键里原本还含"有效条数"，
+    而 ERROR 数不同的两轮有效条数就不同——v20 42 条与 v22 43 条
     （都是 44 条的 full，差的那 1 条是环境 ERROR）互相进不了对方的组，
     整轮散布永远量不出来。修法：键改用**用例集身份**（报告里全部结果的
     case id 集合，含 ERROR 轮），条数本身退出分组、只作展示列。

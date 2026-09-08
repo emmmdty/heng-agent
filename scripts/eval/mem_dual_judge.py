@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""B2 双 judge 证据段补跑（三重认证第 ③ 条，二十五期修订口径照抄）。
+"""B2 双 judge 证据段补跑（三重认证第 ③ 条，v25 修订口径照抄）。
 
 背景：B2 认证轮主判段统计门槛全过（decisive/p/CI/方向），但三重认证第
 ③ 条"双 judge ≤20 对证据段"没随轮烧出——ab_run 的双 judge 段只能跟在
@@ -8,7 +8,7 @@
 拒绝出证据），按 select_dual_judge_pairs 同一选取逻辑取 ≤20 对，用
 deepseek-v4-flash 重判两个顺序，与已存 longcat 裁决比对一致率。
 
-口径（二十五期 M3 证据段同款）：deepseek max_tokens 2000（make_judge_call
+口径（v25 M3 证据段同款）：deepseek max_tokens 2000（make_judge_call
 按模型分预算）；一致率只作 judge 可信度证据，不参与胜负判定；任一侧
 裁决缺失的对不进分母（judge_agreement 既有规矩）。
 

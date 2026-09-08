@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """算式自洽的离线审计与门禁
 
-十九期把 `check_arithmetic` 接进了编排器轮末，命中就发 `arith.inconsistent` 事件。
+v19 把 `check_arithmetic` 接进了编排器轮末，命中就发 `arith.inconsistent` 事件。
 **但事件发出去之后没有任何人读它**——不进 `make check`，不进报告，
 grep 全仓只有 app 自己和单测。那份"346 条回复、命中 2 处、零误报"的读数
 是一次性手工扫描，结果被硬编码成了 `test_arithmetic_check.py` 里的两个字符串，
 没有可重跑的脚本。
 
 于是这道判据在真实评测里等价于不存在：它写进流水，而流水会被清理
-（见 [test_evidence_durability.py]）。护栏的验收标准在交接文档里写得很清楚——
+（见 [test_evidence_durability.py]）。护栏的验收标准很清楚——
 "只有一个证据算数：它拒绝过一次，而且那次拒绝被记了下来"。
 记下来还不够，得有人去读。
 
@@ -18,7 +18,7 @@ grep 全仓只有 app 自己和单测。那份"346 条回复、命中 2 处、�
 **与金额出处门禁的关键差别：算式不自洽不设阈值、不设样本量下限。**
 无出处金额率是比率指标（对已有出处数字的修辞取整本来就会占掉几个点），
 所以要样本量才能下结论；而 `886.34 × 7.5% = 6.48` 是一次具体的事实错误，
-"发生了没有"不是"高了低了"——踩坑 45 那条纪律的同一面。命中一处即红。
+"发生了没有"不是"高了低了"——同一条纪律的另一面。命中一处即红。
 """
 import json
 
@@ -71,7 +71,7 @@ class TestTraceCarriesArithmeticWarnings:
 
 class TestAuditSession:
     def test_catches_the_real_defect(self, tmp_path):
-        """十九期那条原文：结果对（来自工具），过程错。"""
+        """v19 那条原文：结果对（来自工具），过程错。"""
         path = _write_trace(
             tmp_path, "eval-taxable-1", ["关税 = $886.34 × 7.5% = $6.48"],
         )

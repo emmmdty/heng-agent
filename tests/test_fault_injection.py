@@ -201,7 +201,7 @@ class TestInstallIsOffByDefault:
 class TestServerWiring:
     """端点与上报的接线判据。
 
-    七期教训：写完了不接线，外观与"故意不做"完全一样，没有任何告警。
+    v7 教训：写完了不接线，外观与"故意不做"完全一样，没有任何告警。
     故障注入尤其如此——它平时是关的，接错了也不会有人发现，
     直到某天写故障用例时才发现注入根本没生效（而那时用例已经绿了一轮）。
     """
@@ -230,7 +230,7 @@ class TestServerWiring:
     def test_health_reports_fault_injection(self, monkeypatch):
         """`/health` 必须上报注入状态。
 
-        踩坑 32 的同一条：分数变了要能归因到配置。开着精排故障跑出来的报告，
+        同一条纪律：分数变了要能归因到配置。开着精排故障跑出来的报告，
         配置行不写这件事的话，读的人只会看到"精排档分数崩了"然后去改检索参数。
         """
         import inspect

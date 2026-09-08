@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""soak 内存验证（二十三期清单 7）：数百会话打服务，验证 RSS 在 LRU 上限后持平
+"""soak 内存验证（v23）：数百会话打服务，验证 RSS 在 LRU 上限后持平
 
 用法：
     uv run python scripts/soak_memory.py                        # 300 会话，并发 3
     uv run python scripts/soak_memory.py --sessions 260 --rss-every 5
     uv run python scripts/soak_memory.py --json
 
-背景：十七期给按会话累积的东西加了 LRU 上限（SESSION_CACHE_MAX，默认 200），
+背景：v17 给按会话累积的东西加了 LRU 上限（SESSION_CACHE_MAX，默认 200），
 但没有长跑环境验证过"上限真的生效"。本工具补上这个欠账：
 每会话独立 session_id / buyer_id，用**读路径与闲聊 query** 轮换打服务
 （不用下单——写路径会扣库存、写订单，是对用例集事实状态的污染），

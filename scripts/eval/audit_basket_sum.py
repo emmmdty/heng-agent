@@ -21,7 +21,7 @@ unsourced）是诊断线索，走比率口径；本判据是"这一行把组合�
 且组合总价与该金额不符。没有第 4 条就没有 ground truth，只作线索不定罪。
 
 **"本轮 0 处"要分清是"判过了、全对"还是"压根没东西可判"**：
-读数里两者分开写，不能让后者冒充前者（踩坑 33）。
+读数里两者分开写，不能让后者冒充前者。
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class SessionBasket:
     amounts: int
     violations: list[UnsourcedAmount] = field(default_factory=list)
     # 会话内是否出现过 quote_basket 报价。没有它判据只有线索可看、定不了罪，
-    # 所以"本轮 0 处违规"必须按这个字段分成两说（踩坑 33）。
+    # 所以"本轮 0 处违规"必须按这个字段分成两说。
     has_basket_quote: bool = False
     runtime_flagged: bool = False
 
@@ -209,7 +209,7 @@ def main() -> None:
     audits = audit_directory_basket(directory)
     if report is not None:
         # 一份都匹配不上时 select_audits 会报错退出：0 个金额算出的"0 处违规"
-        # 会被门禁当满分放行，比红灯更危险（踩坑 33）
+        # 会被门禁当满分放行，比红灯更危险
         audits = select_audits(audits, sessions_from_report(report))
     summary = summarize(audits)
     print(json.dumps(summary, ensure_ascii=False, indent=2) if args.json else render(audits, summary))

@@ -30,7 +30,7 @@ REMEMBER_TOOL = "remember_preference_tool"
 # 先导档预登记：触发用例 → 验证下游用例（沉淀改变的行为在哪个用例里显形）。
 # preference-conflict 是会话内自写自用（第 1 轮写、第 2 轮推荐），下游 = 本用例
 # 自己（on/off 是两次独立执行，对照仍成立）。
-# forget 链（B3，二十七期）：memory-forget-setup 写两条 → memory-forget 撤回
+# forget 链（B3，v27）：memory-forget-setup 写两条 → memory-forget 撤回
 # 其中一条并验证旧行为恢复——验证器方向取反（recall_restored），见
 # build_deposit 的 trigger 分支。
 DOWNSTREAM_CASE = {
@@ -137,7 +137,7 @@ def build_deposit(case_id: str, buyer_id: str, session_id: str, write: dict) -> 
             )
         else:
             raise SystemExit(
-                f"forget 链的写入 kind={write_kind!r} 没有预登记的验证器形态——要扩先回写任务书"
+                f"forget 链的写入 kind={write_kind!r} 没有预登记的验证器形态——要扩先回写任务定义"
             )
     elif write_kind == "dislike":
         verifier_spec = _dislike_verifier_spec()
@@ -160,7 +160,7 @@ def build_deposit(case_id: str, buyer_id: str, session_id: str, write: dict) -> 
     else:
         raise SystemExit(
             f"写入 kind={write_kind!r} 没有预登记的验证器形态——"
-            "没有确定性验证器的写入不入库（不可验证 = 不许写入），要扩先回写任务书"
+            "没有确定性验证器的写入不入库（不可验证 = 不许写入），要扩先回写任务定义"
         )
     return MemoryDeposit(
         buyer_id=buyer_id,

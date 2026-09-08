@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # select() 是主 Agent（orchestrator._build_inputs）与检索子 Agent
 # （task_dispatch_tool._preference_hint）两个注入面的公共漏斗，在这里关 =
 # 一处开关覆盖全部注入，两个调用方对空选中集本来就不注入，无需改调用侧。
-# 直读 env 而不进 settings 是二十六期改动面红线的妥协（settings.py /
+# 直读 env 而不进 settings 是 v26 改动面红线的妥协（settings.py /
 # composition.py 归 #14 线，B 线不碰）；#14 合流后可挪进 settings 接线。
 # 取值约定同 settings.py：不在 ("0", "false", "False") 内即视为开，缺省开——
 # 对齐全仓惯例，操作者写 =true 才不会静默跑成 A/A。

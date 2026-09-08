@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""三期单测：品类知识库 RAG / Context 策略 / 工具韧性（超时+熔断）。
+"""v3 单测：品类知识库 RAG / Context 策略 / 工具韧性（超时+熔断）。
 
 全部不依赖真实 LLM 与外部服务：embedding 用确定性桩，向量库用 Qdrant 本地嵌入模式。
 """
@@ -122,7 +122,7 @@ class TestContextPolicy:
             assert "{" + field + "}" in config.summary_template
 
     def test_summary_template_renders_with_schema_fields(self):
-        """用 schema 字段实际渲染一次，防止占位符写错（二期冒烟曾暂错 KeyError）。"""
+        """用 schema 字段实际渲染一次，防止占位符写错（v2 冒烟曾暂错 KeyError）。"""
         config = build_context_config(context_size=128000, tool_result_limit=20000)
         rendered = config.summary_template.format(
             task_overview="买露营灯",
@@ -136,7 +136,7 @@ class TestContextPolicy:
 
 class TestTransientRetryPolicy:
     """上游瞬时故障识别：网关把限流错误写在 SSE 流中间，2.0 模型层重试盖不到，
-    靠 orchestrator 这一层按错误特征兜底（三期冒烟实际遇到过）。"""
+    靠 orchestrator 这一层按错误特征兜底（v3 冒烟实际遇到过）。"""
 
     def test_gateway_concurrency_error_is_transient(self):
         assert _is_transient(RuntimeError("Too many concurrent requests."))

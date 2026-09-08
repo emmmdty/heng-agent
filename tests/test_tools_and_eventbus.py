@@ -133,7 +133,7 @@ class TestToolsDirectInvoke:
 class TestQuoteBasketDestinationErrors:
     """组合报价的目的国错误必须能让模型自纠。
 
-    九期评测挖出的同一条缝（另一头在 catalog_search）：模型把买家说的"欧盟"
+    v9 评测挖出的同一条缝（另一头在 catalog_search）：模型把买家说的"欧盟"
     翻成 DE/FR，工具报的是"P1002（TrailOx 20寸登机行李箱）不可寄往 DE"——
     这句话把锅甩给了商品，模型据此得出"这些箱子不发欧盟"，
     而真相是**规则表根本没有 DE 这个目的国**。
@@ -214,7 +214,7 @@ class TestToolDocsMatchTheRuleTable:
     规则表加了新目的国，工具描述还是老五个，模型永远不会去用新的。
 
     这类"忘了同步"的故障外观和"故意不支持"完全一样，没有任何告警
-    （七期 BM25 忘接线是同一类）。所以用一条测试把两边钉在一起。
+    （v7 BM25 忘接线是同一类）。所以用一条测试把两边钉在一起。
     """
 
     def _supported(self):
@@ -254,7 +254,7 @@ class TestToolDocsMatchTheRuleTable:
 class TestSearchToolsAreActuallyWired:
     """工具写完了但没挂进 toolkit，是一类**零告警**的故障。
 
-    七期栽过同一个：BM25 索引写好了、单测全绿，但 `catalog_search` 里没接线，
+    v7 栽过同一个：BM25 索引写好了、单测全绿，但 `catalog_search` 里没接线，
     检索行为与没写它时一模一样，谁也不会报错。所以把"注册了哪些工具"
     也钉成判据——新增工具时忘了挂，这条会红。
     """

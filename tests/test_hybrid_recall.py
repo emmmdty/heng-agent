@@ -184,7 +184,7 @@ class TestHybridStrategyLadder:
         assert result["hits"], "字面路是纯本地的，向量挂了仍必须有召回"
 
     async def test_without_lexical_index_behaviour_is_unchanged(self, hybrid_ready):
-        """不注入 lexical_index 时行为与四期完全一致——混合召回是加法不是改写。"""
+        """不注入 lexical_index 时行为与 v4 完全一致——混合召回是加法不是改写。"""
         repo, embedder, index, _ = hybrid_ready
         uc = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
         result = await uc.execute(ProductSearchSpec(normalized_query="露营灯 抗造"))

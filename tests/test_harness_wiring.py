@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """Harness 到底挂在哪些工具上（接线判据）。
 
-十四期发现的真缺口：`HarnessToolMiddleware` 全仓只在 `main_agent.py` 实例化一次，
+v14 发现的真缺口：`HarnessToolMiddleware` 全仓只在 `main_agent.py` 实例化一次，
 而那条链只挂给了主 Agent 自己的三个工具（task_dispatch / remember / forget）。
 **检索、计价、订单工具走的是各自工厂的 `_resilience()`，里面只有熔断中间件。**
 
 后果（每一条都是"看起来做了、实际从没跑过"）：
 
     - `create_order_tool` 的顺序硬拒（下单需先检索）从没生效过
-    - `TOOL_REQUIRED_FIELDS` 的 schema 断言从没跑过——包括十一期专门给
+    - `TOOL_REQUIRED_FIELDS` 的 schema 断言从没跑过——包括 v11 专门给
       quote_basket / optimize_basket 补的那两条
     - L3 注入过滤 `sanitize_tool_output` 从没作用于检索与知识库返回，
       而那恰恰是注入内容唯一可能进来的地方
     - LoopDetector 只数得到派发与记忆工具，数不到"同一个检索连调五次"
 
-外观与"故意不做"完全一样，没有任何告警——七期 BM25 忘接线是同一类。
+外观与"故意不做"完全一样，没有任何告警——v7 BM25 忘接线是同一类。
 所以把"哪些工具挂了 Harness"钉成判据。
 """
 from app.infrastructure.harness_middleware import HarnessToolMiddleware
@@ -92,7 +92,7 @@ class TestBusinessToolsCarryTheHarness:
 
 
 class TestL3DoesNotMangleProductCopy:
-    """L3 注入过滤现在**第一次**作用在检索返回上（十四期接线之前它从没跑到过）。
+    """L3 注入过滤现在**第一次**作用在检索返回上（v14 接线之前它从没跑到过）。
 
     命中时它会把片段替换成 `[内容已过滤：疑似注入]` —— 作用在商品卡上就是
     静默改坏了给买家看的文案。所以拿全库 60 个 SPU 的真实检索返回跑一遍，
@@ -161,9 +161,9 @@ class TestPromptListsEveryTool:
     """注册了的工具必须在系统提示词里出现。
 
     "工具存在 ≠ 模型会调"这句话在本仓被反复验证过：
-    十一期加了 optimize_basket_tool 之后，悬了三期才由 smoke 轮给出答案。
+    v11 加了 optimize_basket_tool 之后，悬了三个版本才由 smoke 轮给出答案。
     而**提示词里没写**是这句话最彻底的一种形式——模型压根不知道有这个工具，
-    再好的工具也等于没做，且没有任何东西会报警（同踩坑 37）。
+    再好的工具也等于没做，且没有任何东西会报警。
 
     只检查"名字出现过"，不检查怎么写的：怎么描述是提示词工程的事，
     判据只管"有没有把它介绍给模型"。

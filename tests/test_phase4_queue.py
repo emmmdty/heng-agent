@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""四期模块三：Redis Stream 队列与跨进程事件背板
+"""v4 模块三：Redis Stream 队列与跨进程事件背板
 
 用内存替身模拟 Redis Stream / Pub-Sub 的关键语义，重点验证三件容易出事的事：
     1. 处理失败不 ack，消息留在 pending 等重投（at-least-once）；

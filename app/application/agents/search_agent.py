@@ -62,7 +62,7 @@ class SearchAgentFactory:
         # 闸门由组装根下发，三个工厂必须共用同一个，否则各限一份等于没限
         self._throttle = throttle
         # 工具中间件链由组装根下发（判定器按会话累积状态，必须跨 Agent 共享）。
-        # 缺省时自建一条完整链——**不能只留熔断**：十四期就是因为这里少了 Harness，
+        # 缺省时自建一条完整链——**不能只留熔断**：v14 就是因为这里少了 Harness，
         # 顺序硬拒/schema 断言/L3 过滤在业务工具上一次都没跑过。
         self._tool_middlewares = tool_middlewares
 

@@ -192,7 +192,7 @@ class TestBudgetArithmeticIsSourced:
 
 class TestGuardsAndErrors:
     def test_unsupported_destination_names_the_supported_ones(self, tariff):
-        """十期教训：错误信息要能让模型自纠，否则它只会把错话转述给买家。"""
+        """v10 教训：错误信息要能让模型自纠，否则它只会把错话转述给买家。"""
         with pytest.raises(ValueError, match="EU"):
             optimize_basket(tariff, _two_needs(), ship_to="DE", target_currency="CNY")
 

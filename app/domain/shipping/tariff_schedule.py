@@ -30,7 +30,7 @@ _TARIFF_RATES: dict[str, dict[str, float]] = {
 # 存 CNY 等于把汇率烙进规则表，而且**原生口径就此丢失**——买家语境是美国、目标币种是 CNY 时，
 # Agent 想说"美国免税门槛"只能自己反折成 `$800`，这个数没有工具出处。
 # 出处校验实测抓到过：它写的是"美国免税门槛 $800（约 ¥5680）"，5680 有出处、800 没有。
-# 这已经是同一个 `$800` 第三次从新路径回来（八期堵"凭知识说"、十期堵"工具没被调到"、
+# 这已经是同一个 `$800` 第三次从新路径回来（v8 堵"凭知识说"、v10 堵"工具没被调到"、
 # 这次是"调到了但口径不对"）。折算统一交给汇率表，规则表只管规则。
 #
 # 另：JP 原先写的是 `10_000 * 5`，手写的 0.05 与汇率表里的 JPY=0.048 不一致；
@@ -67,7 +67,7 @@ def _de_minimis_fields(
 
     单品报价与组合报价必须给出**同一组**字段，否则模型在"一件"和"两件"之间
     切换时会时有时无地失去出处——单品/组合两条路径各写一份是这类缺陷的温床
-    （八期就是只修了单品那条，组合那条从另一头漏回来）。
+    （v8 就是只修了单品那条，组合那条从另一头漏回来）。
     """
     return {
         "de_minimis_threshold_major": _major(threshold),
@@ -97,7 +97,7 @@ class ShippingQuote:
     # 与 `taxable_base` 的注释：这三个数不给，模型要解释关税就只能自己减、自己反折。
     de_minimis_threshold_native: Money = None  # type: ignore[assignment]
     # 应税基数：超出免税额度、**实际参与计征**的那部分。
-    # 十期实测缺陷：Agent 写"1,199 × 12% ≈ ¥3.48"——最终数字对（工具给的）、
+    # v10 实测缺陷：Agent 写"1,199 × 12% ≈ ¥3.48"——最终数字对（工具给的）、
     # 计税基数错（整单 1199 × 12% = 143.88，差 40 倍）。同一轮出处校验报的两处
     # 无出处金额都是 `€3.72`，正是它自己减出来的这个基数。判据指的地方就是工具该补的地方。
     taxable_base: Money = None  # type: ignore[assignment]
@@ -150,7 +150,7 @@ class BasketQuote:
     # 分开买（每个商品各一单、各付一次运费）的到手价合计。
     # smoke 轮实测：Agent 答对了"分开买 $72.95、省 $3.65"，但这两个数
     # 没有任何工具出处——它是自己把两个单品到手价加起来、再减出来的。
-    # 判据指的地方就是工具该补的地方（同八期 de_minimis_threshold、十一期 taxable_base）。
+    # 判据指的地方就是工具该补的地方（同 v8 de_minimis_threshold、v11 taxable_base）。
     separate_purchase_landed: Money = None  # type: ignore[assignment]
 
     def landed_total(self) -> Money:
@@ -212,7 +212,7 @@ class TariffSchedule:
         """免税额度的原生口径（US → 800 USD、EU → 150 EUR）。
 
         公开出来是为了让规则表以外的地方（judge 的事实基准）不必再 import 私有常量——
-        十期的 `_landed_price_rules()` 就是那么写的，规则表一改结构那边就断。
+        v10 的 `_landed_price_rules()` 就是那么写的，规则表一改结构那边就断。
         """
         if ship_to not in _DE_MINIMIS_NATIVE:
             raise ValueError(f"暂不支持的目的国：{ship_to}（支持 {self.supported_destinations()}）")
@@ -319,7 +319,7 @@ class TariffSchedule:
         """免税额度与应税基数的两种口径，单品与组合两条路径共用一份。
 
         共用是刻意的：这两条路径各写一份的话，"一件"有出处、"两件"没出处
-        （八期就只修了单品那条）。原生口径同时给出，是因为买家语境的币种
+        （v8 就只修了单品那条）。原生口径同时给出，是因为买家语境的币种
         常常不等于 target_currency，Agent 想跨币种表述就只能自己反折。
         """
         native = self.de_minimis_native(ship_to)

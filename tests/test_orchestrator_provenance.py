@@ -193,7 +193,7 @@ class TestPreferenceHintDoesNotHijackTheTurn:
     根因是结构的，不是措辞的：偏好被当成**另一条 user 消息**插在买家问句之前，
     上下文里于是连着两条买家发言，模型挑了前一条当本轮的话。
     修法也应该是结构的——合并成一条消息，让"本轮买家说了什么"只有一个答案，
-    而不是在提示词里求模型别理它（这条路本仓已经验证过拦不住，见踩坑 25）。
+    而不是在提示词里求模型别理它（这条路本仓已经验证过拦不住）。
     """
 
     async def test_preference_and_query_arrive_as_one_message(self):
@@ -231,7 +231,7 @@ class TestPreferenceHintDoesNotHijackTheTurn:
 
 
 class TestContactProvenanceWiring:
-    """收货字段出处校验的接线（二十期实测缺陷 `clarify-missing-address`）。
+    """收货字段出处校验的接线（v20 实测缺陷 `clarify-missing-address`）。
 
     判定逻辑本身在 tests/test_contact_provenance.py 里测；这里测的是**接线**
     ——判定器有没有真的挂在轮次边界上、告警有没有真的进事件流与落盘轨迹。
@@ -271,7 +271,7 @@ class TestContactProvenanceWiring:
 
 
 class TestKnowledgeProvenanceWiring:
-    """知识库出处校验的接线（交接文档"第一点五优先"欠了半个期的那半）。
+    """知识库出处校验的接线（早期分诊结论欠了半个版本的那半）。
 
     判定逻辑在 tests/test_knowledge_provenance.py；这里钉的是接线——
     "写完了没接上"与"故意不做"外观完全一样（BM25 教训），必须有一条测试钉住。
@@ -333,7 +333,7 @@ class TestKnowledgeProvenanceWiring:
 
     async def test_contact_warning_lands_in_persisted_trace(self, tmp_path):
         """收货字段告警进落盘轨迹。本方法此前与上面的知识库轨迹测试同名，
-        被静默遮蔽从未运行过（F811）——绿色装饰，已于二十三期正名。"""
+        被静默遮蔽从未运行过（F811）——绿色装饰，已于 v23 正名。"""
         from app.infrastructure.persistence.json_file_stores import JsonFileConversationStore
 
         bus = TradeEventBus()

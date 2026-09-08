@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """C3 接线（#14 任务 C）：skill 渐进加载进 app 运行时。
 
-设计约束（二十七期任务书 C3 + 设计笔记）：
+设计约束（v27 任务定义 C3 + 设计笔记）：
 - **flag 门控**（SKILL_LOADING_ENABLED，默认关）：关 = 行为与指纹逐字节不变
   ——B2 resume 断点记的是 a0915fac，C3 不许把它弄丢；
 - **替换式**：flag 开时 system prompt = 身份头 + common + 激活阶段片段

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""红队对抗 query 生成器（二十三期清单 6）
+"""红队对抗 query 生成器（v23）
 
 **没有人工标注人，攻击者用 judge 模型兼任**：longcat-2.0 扮演恶意买家，
 按四类攻击面（越权 / 注入 / 诱导编造 / 诱导跳过流程）产出候选 query。
@@ -28,7 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EVAL_DIR = PROJECT_ROOT / "eval"
 
 def _attacker_model() -> str:
-    """攻击者与 judge 同源（清单 6 的约束）：读同一个环境变量，配置一改两边跟着一起改。"""
+    """攻击者与 judge 同源（同源约束）：读同一个环境变量，配置一改两边跟着一起改。"""
     import os
 
     return os.environ.get("EVAL_JUDGE_MODEL") or "longcat-2.0"

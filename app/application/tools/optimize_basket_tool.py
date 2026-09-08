@@ -77,7 +77,7 @@ def build_optimize_basket_tool(
             if not needs:
                 raise ValueError("needs 不能为空：至少要有一个需求及其候选商品")
 
-            # 规则表支持性**先于**商品可达性判断（十期教训）：顺序反了的话，
+            # 规则表支持性**先于**商品可达性判断（v10 教训）：顺序反了的话，
             # 传 DE 会先撞上"某商品不可寄往 DE"，模型据此告诉买家"这些商品不发欧盟"，
             # 而真相是规则表根本没有 DE 这个目的国，模型无从自纠。
             if ship_to not in tariff.supported_destinations():
@@ -151,7 +151,7 @@ def build_optimize_basket_tool(
             )
 
         # 事件发的就是喂给模型的那一份：少发一部分，金额出处校验扫轨迹时
-        # 会把有出处的数字判成无出处（八期实测的失真源头）
+        # 会把有出处的数字判成无出处（v8 实测的失真源头）
         bus.publish(session_id, "tool.result", {"tool": "optimize_basket_tool", **payload})
         return ToolChunk(
             content=[TextBlock(type="text", text=json.dumps(payload, ensure_ascii=False))],

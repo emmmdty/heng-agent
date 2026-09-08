@@ -33,7 +33,7 @@ _REQUIRED_TEXT_FIELDS = (
 @dataclass(frozen=True)
 class VerificationResult:
     ok: bool
-    detail: str  # 过了什么 / 为什么没过——失败必须留名（二十三期纪律）
+    detail: str  # 过了什么 / 为什么没过——失败必须留名（v23 纪律）
 
 
 class DepositVerifier(ABC):
@@ -199,7 +199,7 @@ class RecommendationComplianceVerifier(DepositVerifier):
 
 @dataclass(frozen=True)
 class PreferenceRecallRestoredVerifier(DepositVerifier):
-    """撤回链验证（B3，二十七期）：方向与遵从判定**相反**。
+    """撤回链验证（B3，v27）：方向与遵从判定**相反**。
 
     遵从判定问"注入后行为有没有被偏好改变"；这里问"撤回后旧行为有没有
     恢复"（任务 B 指标表"记忆污染回归：撤回偏好后旧偏好不得再影响回复，

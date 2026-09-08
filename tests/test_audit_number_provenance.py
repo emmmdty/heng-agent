@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""金额出处审计的暴露面双指标（二十三期清单 1）
+"""金额出处审计的暴露面双指标（v23）
 
 **为什么要把一个数拆成两个**：无出处金额率是比率指标，它有一个 Goodhart 口子
 ——模型少写解释性算术（"分开买合计 $72.95"这类自己算的数），
@@ -62,7 +62,7 @@ class TestExposureDualMetric:
         assert summary["arithmetic_ratio"] == 0.0
 
     def test_zero_amounts_zero_ratio(self):
-        """0 处金额算 0% 会被当满分放行（踩坑 33），比率必须安全归零。"""
+        """0 处金额算 0% 会被当满分放行，比率必须安全归零。"""
         summary = summarize([_audit("s1", 0, [])])
         assert summary["arithmetic_ratio"] == 0.0
 

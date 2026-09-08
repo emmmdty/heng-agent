@@ -20,7 +20,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:?需设置 LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY:?需设置 LLM_API_KEY}
       LLM_MODEL: ${LLM_MODEL:-mimo-v2.5}
-      # 四期：网关配额闸门与限流回退（不配则用 settings 默认值）
+      # v4：网关配额闸门与限流回退（不配则用 settings 默认值）
       LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-longcat-2.0}
       LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-2}
       LLM_MIN_INTERVAL_SECONDS: ${LLM_MIN_INTERVAL_SECONDS:-1.0}
@@ -28,14 +28,14 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-heng_products}
-      # 四期：存储走 SQLite（落在 app-data 卷）；DATABASE_URL=file 退回 JSON 文件存储
+      # v4：存储走 SQLite（落在 app-data 卷）；DATABASE_URL=file 退回 JSON 文件存储
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/heng.db}
-      # 四期：Redis 缓存（embedding 缓存 + 语义缓存 + 幂等键）；置空则全部缓存关闭
+      # v4：Redis 缓存（embedding 缓存 + 语义缓存 + 幂等键）；置空则全部缓存关闭
       REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
       SEMANTIC_CACHE_THRESHOLD: ${SEMANTIC_CACHE_THRESHOLD:-0.95}
       # 跑评测回归时设为 0：开着缓存会把旧回复直接返回，评分变成评缓存
       SEMANTIC_CACHE_ENABLED: ${SEMANTIC_CACHE_ENABLED:-1}
-      # 四期：队列削峰（需 worker 服务一起跑）；QUEUE_ENABLED=0 则意图在 API 进程内直跑
+      # v4：队列削峰（需 worker 服务一起跑）；QUEUE_ENABLED=0 则意图在 API 进程内直跑
       QUEUE_ENABLED: ${QUEUE_ENABLED:-1}
       QUEUE_WAIT_SECONDS: ${QUEUE_WAIT_SECONDS:-300}
       DATA_DIR: /app/data

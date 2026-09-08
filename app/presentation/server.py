@@ -131,11 +131,11 @@ def build_app() -> FastAPI:
             "queue_depth": await c.task_queue.depth() if c.task_queue is not None else 0,
             # 跑测身份：评测脚本原样抄进报告，让"分数变了"能归因到配置而不是靠回忆
             "prompt_fingerprint": c.prompt_fingerprint,
-            # 提示词变体（二十五期任务 A）：空 = 基线。**空也要报**——
+            # 提示词变体（v25 任务 A）：空 = 基线。**空也要报**——
             # "字段缺席"说明服务是旧代码，与"空字符串 = 基线"必须可区分。
             "prompt_variant": c.prompt_variant,
             # 代码新鲜度：上面那些字段答不了"这进程跑的是不是我刚改的代码"。
-            # 九期踩过——进程 16:43 起、修复 16:49 落地、没重启，两条定向回归
+            # v9 踩过——进程 16:43 起、修复 16:49 落地、没重启，两条定向回归
             # 全打在旧代码上，而这份 /health 报的配置一字不差。
             "code": code_identity(),
             # 这一轮的流水落在哪：报告原样抄走，金额出处审计据此找得到对应的流水。
@@ -149,7 +149,7 @@ def build_app() -> FastAPI:
             },
             # 评测态故障注入：未启用时是 false。必须上报——开着精排故障跑出来的
             # 报告，配置行不写这件事的话，读的人只会看到"精排档分数崩了"，
-            # 然后去改检索参数（踩坑 32 的同一条）。
+            # 然后去改检索参数（同一条纪律）。
             "fault_injection": c.faults.describe(),
         }
         if deep:
@@ -161,7 +161,7 @@ def build_app() -> FastAPI:
 
     @api.get("/debug/memory")
     async def memory_diagnostics(snapshot: bool = False, compare: bool = False) -> dict:
-        """进程内存诊断（二十三期 soak 分析的观测端点）。
+        """进程内存诊断（v23 soak 分析的观测端点）。
 
         用法：PYTHONTRACEMALLOC=<深度> 启动进程后，
             ?snapshot=1 取基线快照 → 打会话 → ?compare=1 看增长分配点。

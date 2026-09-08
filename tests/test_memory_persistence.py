@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""二期记忆与持久化单测：偏好 Store / 会话状态 round-trip。"""
+"""v2 记忆与持久化单测：偏好 Store / 会话状态 round-trip。"""
 import pytest
 
 from agentscope.message import AssistantMsg, UserMsg

@@ -6,7 +6,7 @@
     uv run python scripts/eval/audit_contact_provenance.py --report latest --gate   # 当门禁用
     uv run python scripts/eval/audit_contact_provenance.py --json
 
-二十期的教训摆在前面：`arith.inconsistent` 那条判据只做了"检测"没做"暴露"，
+v20 的教训摆在前面：`arith.inconsistent` 那条判据只做了"检测"没做"暴露"，
 在 app 之外零消费方，**在真实评测里等价于不存在**。所以 `contact.unsourced`
 从落地第一天就带着它的下游——就是本脚本。
 
@@ -16,18 +16,18 @@
     算式自洽（audit_arithmetic）         数字**怎么来**
     收货字段（本脚本）                    买家的**个人信息**从哪来
 
-二十期实测那次（`clarify-missing-address`），Agent 写的是
+v20 实测那次（`clarify-missing-address`），Agent 写的是
 "您之前的记录是上海市浦东新区世纪大道100号"——**里面一个金额都没有**，
 前两条扫描完全无感。
 
 **门禁口径与算式自洽相同、与金额出处不同：不设阈值、不设样本量下限，命中一处即红。**
 无出处金额率是比率指标（对已有出处数字的修辞取整本来就占几个点），
 小样本上不判定是对的；而"这个地址不存在于任何地方"是能指着原文说的事实错误，
-"发生了没有"不是"高了低了"（踩坑 45）。
+"发生了没有"不是"高了低了"。
 
 判据刻意窄（只认完整地址、手机号、带标签的邮编；**不认收件人姓名**），
 所以"本轮 0 处问题"要分清是"判过了、全对"还是"压根没东西可判"——
-读数里两者分开写，不能让后者冒充前者（踩坑 33）。
+读数里两者分开写，不能让后者冒充前者。
 """
 from __future__ import annotations
 
@@ -211,7 +211,7 @@ def main() -> None:
     audits = audit_directory_contact(directory)
     if report is not None:
         # 一份都匹配不上时 select_audits 会报错退出：0 个断言算出的"0 处问题"
-        # 会被门禁当满分放行，比红灯更危险（踩坑 33）
+        # 会被门禁当满分放行，比红灯更危险
         audits = select_audits(audits, sessions_from_report(report))
     summary = summarize(audits)
     print(json.dumps(summary, ensure_ascii=False, indent=2) if args.json else render(audits, summary))

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""分层判读（二十七期 B2 预登记口径）的纯函数守卫。
+"""分层判读（v27 B2 预登记口径）的纯函数守卫。
 
-判读人群冻结在交接文档「五之一」任务 B 指标表【口径回写 · 2026-09-06】：
+判读人群冻结在预登记的任务 B 指标表【口径回写 · 2026-09-06】：
 敏感层主判读（decisive≥30 + 显著性只作用本层）、其余为预期平局对照层
 （照常报告、不作废整轮）。统计函数零新造（ab_stats 全套复用）。
 """
@@ -9,7 +9,7 @@ from scripts.eval.mem_layer_readout import LAYER_SENSITIVE, layer_of, split_rows
 
 
 def test_sensitive_layer_matches_frozen_population():
-    """敏感层 = 2 条现有 + 4 条 B1 新增（二十七期任务书 B2 节）。
+    """敏感层 = 2 条现有 + 4 条 B1 新增（记忆回放人群定义）。
     预登记人群再扩时这里同步——口径冻结在指标表，不在脚本里悄悄改。"""
     assert LAYER_SENSITIVE == {
         "memory-recall", "memory-forget",

@@ -4,10 +4,10 @@
 要防的问题：**门禁扫的目录只增不减，历史流水会把读数永久推高。**
 
 `data/conversations/` 是累积目录：每跑一条用例就多一份流水，旧的不会消失。
-交接文档已经写明"无出处金额率只在同一轮内横向比较，不要拿两轮的绝对值当趋势"——
+口径已经写明"无出处金额率只在同一轮内横向比较，不要拿两轮的绝对值当趋势"——
 但门禁恰恰是拿绝对值比阈值的，扫全目录等于把这条纪律作废。
 
-九期实测撞上：修复前那两轮的流水（含模型凭知识说的 "$800"）留在目录里，
+v9 实测撞上：修复前那两轮的流水（含模型凭知识说的 "$800"）留在目录里，
 即便新一轮已经把 $800 修没了，全量比率仍是 10.2%，`make check` 照样红。
 再往后每跑一轮，分母分子一起涨，阈值只能不断往上调——门禁就废了。
 
@@ -38,10 +38,10 @@ class TestSessionsFromReport:
         assert sessions_from_report(report) == {"eval-a-111111", "eval-b-222222"}
 
     def test_report_without_session_ids_fails_loudly(self):
-        """九期之前的报告不记 session_id。
+        """v9 之前的报告不记 session_id。
 
         静默回退到全量扫描是最坏选项：门禁会拿一个被历史污染的数当本轮读数，
-        而这个错读数看上去和真读数一模一样（踩坑档案第 10 条同型）。
+        而这个错读数看上去和真读数一模一样（同型问题）。
         """
         with pytest.raises(SystemExit, match="session_id"):
             sessions_from_report({"results": [{"id": "a", "score": 1.0}]})
@@ -83,7 +83,7 @@ class TestMinimumSampleSize:
     此时 1 处无出处 = 5.9%、2 处 = 11.8%，阈值 8% 恰好落在两个可能取值之间——
     **门禁的结论完全取决于模型这一轮多写了一句还是少写了一句**，等于抛硬币。
 
-    这与踩坑 30 记下的读数纪律是同一条（n=105 时 1 条 query ≈ 0.95pt，
+    这与早先记下的读数纪律是同一条（n=105 时 1 条 query ≈ 0.95pt，
     单次跑出的 1pt 差异不构成结论）：那条写在文档里，这条要写进判据。
 
     小样本时的正确行为是**不判定**（照常打印发现，退出码 0），
@@ -153,7 +153,7 @@ class TestAuditFollowsTheReportDataDir:
         assert conversations_dir_from_report({"health": {"data_dir": str(tmp_path / "nope")}}) is None
 
     def test_returns_none_for_old_reports(self):
-        """九期到十五期之间的报告不记 data_dir，不能因此报错。"""
+        """v9 到 v15 之间的报告不记 data_dir，不能因此报错。"""
         from scripts.eval.audit_number_provenance import conversations_dir_from_report
 
         assert conversations_dir_from_report({"health": {}}) is None

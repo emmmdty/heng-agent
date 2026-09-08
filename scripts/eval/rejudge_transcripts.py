@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""judge 运行间一致性（二十三期清单 3）
+"""judge 运行间一致性（v23）
 
 用法：
     uv run python scripts/eval/rejudge_transcripts.py --only compare-two   # 小样本试判词格式

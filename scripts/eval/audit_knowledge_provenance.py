@@ -6,17 +6,17 @@
     uv run python scripts/eval/audit_knowledge_provenance.py --report latest --gate
     uv run python scripts/eval/audit_knowledge_provenance.py --json
 
-来源：二十期分诊 `category-insight` 确认，judge 结构上看不到工具返回，
+来源：v20 分诊 `category-insight` 确认，judge 结构上看不到工具返回，
 "知识库当时可不可用"它判不了——出处属不属实这半必须由确定性判据接管。
 判据本体在 `app/application/harness/knowledge_provenance.py`，
-本脚本是它的下游（二十期的教训：只做"检测"不做"暴露"的判据
+本脚本是它的下游（v20 的教训：只做"检测"不做"暴露"的判据
 在真实评测里等价于不存在）。
 
 **门禁口径：不设阈值、不设样本量下限，命中一处即红**（同算式自洽、收货字段）
 ——"知识库根本没返回过，回复却说'知识库里说'"是能指着原文说的张冠李戴。
 
 判据刻意窄（只认"知识库 / 品类洞察"字样、诚实降级不算声明），
-"本轮 0 处"要分清"判过了、全对"与"压根没东西可判"（踩坑 33）：
+"本轮 0 处"要分清"判过了、全对"与"压根没东西可判"：
 读数按"会话内调过 category_insight_tool"分开统计。
 """
 from __future__ import annotations
@@ -65,7 +65,7 @@ class SessionKnowledge:
     claims: int
     unsourced: list[KnowledgeClaim] = field(default_factory=list)
     # 会话内是否有过 category_insight_tool 的成功返回。没有它，
-    # "0 声明"读不出"判据有没有被喂到东西"（踩坑 33）。
+    # "0 声明"读不出"判据有没有被喂到东西"。
     kb_available: bool = False
     kb_called: bool = False
     runtime_flagged: bool = False
@@ -203,7 +203,7 @@ def main() -> None:
     audits = audit_directory_knowledge(directory)
     if report is not None:
         # 一份都匹配不上时报错退出：0 处声明算出的"0 处问题"
-        # 会被门禁当满分放行，比红灯更危险（踩坑 33）
+        # 会被门禁当满分放行，比红灯更危险
         audits = select_audits(audits, sessions_from_report(report))
     summary = summarize(audits)
     print(json.dumps(summary, ensure_ascii=False, indent=2) if args.json else render(audits, summary))

@@ -11,7 +11,7 @@
 机制：A/B 两臂各是一个独立服务实例（基线臂不设 PROMPT_VARIANT，候选臂
 PROMPT_VARIANT=<变体名> + 独立 VECTOR_STORE_DIR 躲 Qdrant 单进程文件锁），
 评测侧按臂发流量、按臂归因读数。在线按比例分流不做（评测读数站住之前不做，
-YAGNI + 配额约束——任务书口径）。
+YAGNI + 配额约束——任务定义口径）。
 
 真实路径的三段结构（授权文档 M1）：
   1. 执行段：每 (case, arm, sample) 一次独立会话打该臂服务，产物逐次落
@@ -610,7 +610,7 @@ async def run_ab_pipeline(
     """A/B 真实跑测三段管线：执行 → 配对判 → 统计与报告。
 
     产物三件套（都在 eval_dir，{product_prefix}- 前缀分桶；缺省 ab-，
-    #12 记忆回放传 "mem"——ab-*/mem-* 分桶纪律见二十六期任务书纪律 8）：
+    #12 记忆回放传 "mem"——ab-*/mem-* 分桶纪律见 产物分桶纪律）：
       - {prefix}-partial-{stamp}.json：逐样本落盘（整份重写），跑完并出报告后删除；
       - {prefix}-run-{stamp}.json：机器可读（执行产物 + 判行 + 统计 + 两臂配置）；
       - {prefix}-report-{stamp}.md：人读报告（render_ab_report 渲染）。

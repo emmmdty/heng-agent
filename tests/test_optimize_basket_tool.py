@@ -3,7 +3,7 @@
 
 领域层的最优性由 `test_basket_optimizer.py` 保证，这里只钉工具层的三件事：
 **入参宽容度、错误信息可自纠、事件发的就是喂给模型的那一份**。
-最后一条是八期的教训：`product_search_tool` 曾只发 hits、把 filtered_out 漏在外面，
+最后一条是 v8 的教训：`product_search_tool` 曾只发 hits、把 filtered_out 漏在外面，
 模型看得到、轨迹看不到，事后审计与金额出处校验一起失真。
 """
 import json
@@ -153,7 +153,7 @@ class TestErrorsCanBeSelfCorrected:
         assert "EU" in text, "必须给出支持列表，模型才知道该改填什么"
 
     async def test_does_not_blame_the_product_for_a_rule_table_gap(self, tool):
-        """十期教训：规则表没有 DE 却报成"这件商品不发 DE"，
+        """v10 教训：规则表没有 DE 却报成"这件商品不发 DE"，
         模型没有任何办法识破这句话，只能照着它给买家一个错误结论。"""
         chunk = await _call(
             tool, needs=[{"need": "行李箱", "product_ids": ["P1016"]}], ship_to="DE",
@@ -177,7 +177,7 @@ class TestTraceFidelity:
         """事件发的就是喂给模型的那一份。
 
         少发一部分的后果不是"少看点东西"：金额出处校验扫的是轨迹，
-        模型看得到、轨迹看不到时，正常回复会被判成凭空编数字（八期实测）。
+        模型看得到、轨迹看不到时，正常回复会被判成凭空编数字（v8 实测）。
         """
         queue = bus.subscribe("s-opt")
         chunk = await _call(

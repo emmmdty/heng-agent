@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""二期计价规则单测：汇率换算 + 关税运费到手价。"""
+"""v2 计价规则单测：汇率换算 + 关税运费到手价。"""
 import pytest
 
 from app.domain.catalog.exchange_rate import ExchangeRateTable
@@ -196,7 +196,7 @@ class TestDeMinimisThresholdIsSourced:
 
     真实发现（干净整轮的出处校验）：Agent 写"美国 $800 以下免税（de_minimis）"，
     而工具只返回 `de_minimis_applied: true`，**从不给阈值本身**——
-    这个 800 是模型从自己的知识里说的。改了规则表里 US 的额度（十一期后是 `_DE_MINIMIS_NATIVE["US"]`），
+    这个 800 是模型从自己的知识里说的。改了规则表里 US 的额度（v11 后是 `_DE_MINIMIS_NATIVE["US"]`），
     它照样会说 800，而且没有任何东西会报错。
 
     这正是"回复里的每个金额都要有工具出处"要覆盖的东西：
@@ -227,7 +227,7 @@ class TestDeMinimisThresholdIsSourced:
 class TestTaxableBaseIsSourced:
     """应税基数必须由工具返回。
 
-    十期实测（`de-minimis-boundary-eu`）：最终关税 3.48 元是对的（工具算的），
+    v10 实测（`de-minimis-boundary-eu`）：最终关税 3.48 元是对的（工具算的），
     但 Agent 的解释写成「1,199 × 12% ≈ ¥3.48」——**计税基数写成了整单金额**
     （1199 × 12% = 143.88，差了 40 倍）。数字对、过程错。
 
@@ -292,7 +292,7 @@ class TestDeMinimisNativeCurrency:
     就只能自己反折：实测写的是"美国免税门槛 **$800**（约 ¥5680）"——
     5680 有出处，800 没有。
 
-    这是同一个 `$800` 第三次从新路径回来（八期堵"凭知识说"、十期堵"工具没被调到"、
+    这是同一个 `$800` 第三次从新路径回来（v8 堵"凭知识说"、v10 堵"工具没被调到"、
     这次是"调到了但口径不对"）。**一个症状被修掉，不等于产生它的那类缺口被封上。**
     """
 
@@ -339,7 +339,7 @@ class TestDeMinimisNativeCurrency:
 
     def test_public_accessors_expose_both_kinds(self, schedule):
         """规则表以外的地方（judge 的事实基准）要拿到这两个口径，
-        不该再去 import 私有常量——十期 `_landed_price_rules()` 就是那么写的。"""
+        不该再去 import 私有常量——v10 `_landed_price_rules()` 就是那么写的。"""
         native = schedule.de_minimis_native("EU")
         assert (native.to_major_units(), native.currency) == (150.0, "EUR")
         assert schedule.de_minimis("EU", "CNY").to_major_units() == 1170.0
@@ -360,10 +360,10 @@ class TestSeparatePurchaseComparison:
 
     smoke 轮实测（compare-two）：Agent 答对了——$69.30 是合单总价，
     $72.95 是它明确标注的"分开买"对照，$3.65 是省下的差额。
-    但后两个数**没有工具出处**：十一期只给 optimize_basket_tool 补了这两个字段，
+    但后两个数**没有工具出处**：v11 只给 optimize_basket_tool 补了这两个字段，
     而对比类问题走的是 quote_basket_tool，模型只能自己减。
-    **判据指的地方就是工具该补的地方**（同八期的 de_minimis_threshold、
-    十一期的 taxable_base）。
+    **判据指的地方就是工具该补的地方**（同 v8 的 de_minimis_threshold、
+    v11 的 taxable_base）。
     """
 
     def _schedule(self):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """SessionStore 端口
 
-AgentState 快照的存取抽象。四期之前 SessionRegistry 直接依赖了具体的
+AgentState 快照的存取抽象。v4 之前 SessionRegistry 直接依赖了具体的
 JsonFileSessionStore，破坏了洋葱架构的依赖方向，这里补上端口。
 
 接口是 async 的：文件实现同步即可完成，但数据库/Redis 实现必须异步，

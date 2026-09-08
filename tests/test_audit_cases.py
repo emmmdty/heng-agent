@@ -62,7 +62,7 @@ class TestResolveBrand:
 class TestExplicitComparison:
     """一条 query 故意点名同品牌的多个变体，是**有意的对比**，不是歧义。
 
-    九期写 `de-minimis-boundary-eu` 时撞上：免税额度临界最干净的对照就是
+    v9 写 `de-minimis-boundary-eu` 时撞上：免税额度临界最干净的对照就是
     同系列两款箱子（TrailOx 20寸 899 元未超额度、24寸 1199 元超了），
     变量只差价格一项。query 里 "20寸"/"24寸" 都写全了、rubric 也把两组数字
     都钉住了，但原判据只认"收敛到唯一一个"，于是报歧义。

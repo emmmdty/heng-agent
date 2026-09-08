@@ -25,7 +25,7 @@ class TestFirstTurnWriteIsRejected:
         assert "确认" in outcome.reject_reason
 
     def test_reject_reason_tells_the_model_what_to_do(self):
-        """光说"不允许"它只会重试同一个动作（十期教训）。"""
+        """光说"不允许"它只会重试同一个动作（v10 教训）。"""
         tracker = ConfirmationTracker()
         tracker.begin_turn("s1")
         assert "确认卡" in tracker.check("s1", "create_order_tool").reject_reason
@@ -58,7 +58,7 @@ class TestFirstTurnWriteIsRejected:
     def test_unknown_session_degrades_to_warning(self):
         """没有轮次记录（进程重启后从 AgentState 快照恢复的会话）时不硬拒。
 
-        沿用十四期那条「有证据才硬拒」的纪律：拿不到证据就降级为警告，
+        沿用 v14 那条「有证据才硬拒」的纪律：拿不到证据就降级为警告，
         否则重启一次就会误杀所有正在进行的下单。
         """
         tracker = ConfirmationTracker()

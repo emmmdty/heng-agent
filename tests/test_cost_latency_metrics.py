@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""token 成本 / 轮延迟指标脚本（二十三期清单 2）
+"""token 成本 / 轮延迟指标脚本（v23）
 
 读 data/conversations/ 流水的 usage 与 latency_ms，聚合
-「每意图 completion token 分布 / 轮延迟 P50-P95」，落进贡献证明。
+「每意图 completion token 分布 / 轮延迟 P50-P95」，落进历史读数。
 
 测试钉三类读数行为：
     1. 新流水（有 usage 字段）出完整分布；
@@ -57,7 +57,7 @@ def _make_dir(tmp_path: Path) -> Path:
         _turn("buyer", "下单"),
         _turn("agent", "好的。", latency_ms=15000, model="longcat-2.0", prompt=2000, completion=900),
     ]), encoding="utf-8")
-    # 旧流水：没有 usage 字段（二十三期之前），latency 一直有
+    # 旧流水：没有 usage 字段（v23 之前），latency 一直有
     (conv / "eval-old-3.jsonl").write_text("\n".join([
         _session_line(),
         _turn("buyer", "老流水"),

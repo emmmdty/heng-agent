@@ -26,7 +26,7 @@ class TestIdentifiersAreUnique:
     def test_sku_ids_are_globally_unique(self):
         """sku_id 全局唯一，不只是商品内唯一。
 
-        下单出处校验（十四期）与订单行都按 sku_id 认商品；
+        下单出处校验（v14）与订单行都按 sku_id 认商品；
         两个商品共用一个 sku_id 时，"下单的是不是检索到的那个"就判不出来了。
         """
         sku_ids = [sku.sku_id for p in _products() for sku in p.skus]
@@ -50,7 +50,7 @@ class TestPricingIsQuotable:
     def test_ships_to_only_uses_known_destination_codes(self):
         """`ships_to` 里的国家码必须是规则表认识的。
 
-        规则表不认识的目的国会走"计价规则表不支持"这条路（十期修的那条），
+        规则表不认识的目的国会走"计价规则表不支持"这条路（v10 修的那条），
         而买家看到的是"这件商品不发那儿"——一句错话。
         """
         supported = set(TariffSchedule(rates=ExchangeRateTable()).supported_destinations())
@@ -74,7 +74,7 @@ class TestPricingIsQuotable:
 
 class TestCatalogIsBigEnoughToDiscriminate:
     def test_at_least_sixty_products(self):
-        """六期把商品库从 10 扩到 60，是因为 10 个 SPU 下 Recall@10 恒等于 1、
+        """v6 把商品库从 10 扩到 60，是因为 10 个 SPU 下 Recall@10 恒等于 1、
         指标没有区分度。缩回去等于让整套召回评测失去意义。"""
         assert len(_products()) >= 60
 

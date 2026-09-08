@@ -3,7 +3,7 @@
 
 判据一句话：**下单的每一个商品，都必须在本会话的工具返回里出现过。**
 
-这是金额出处校验（八期）在写路径上的同一条缝，而且后果更重：
+这是金额出处校验（v8）在写路径上的同一条缝，而且后果更重：
 回复里的数字错了买家看得出来，订单错了**库存已经扣了**。
 
 现有四道防护都挡不住它：
@@ -55,7 +55,7 @@ class TestProductProvenance:
         assert "P1002" in outcome.reject_reason
 
     def test_reject_reason_tells_the_model_what_to_do(self):
-        """错误信息要能让模型自纠（十期教训）：光说"不允许"它只会重试同一个动作。"""
+        """错误信息要能让模型自纠（v10 教训）：光说"不允许"它只会重试同一个动作。"""
         tracker = OrderProvenanceTracker()
         tracker.record_result("s1", _search_result("P1008"))
         outcome = tracker.check("s1", _items(("P1002", "P1002-S1")))

@@ -466,7 +466,7 @@ class TestRunAbPipeline:
     async def test_product_prefix_names_outputs(self, tmp_path):
         """#12 记忆回放复用本管线：产物前缀可换（mem-*），分桶互不覆盖。
 
-        缺省 ab- 不变——二十五期既有产物命名与全部既有测试不受影响。"""
+        缺省 ab- 不变——v25 既有产物命名与全部既有测试不受影响。"""
         await self._pipeline(tmp_path, [_case("c1")], product_prefix="mem")
         assert (tmp_path / "mem-report-20260905-170000.md").exists()
         run_json = json.loads((tmp_path / "mem-run-20260905-170000.json").read_text(encoding="utf-8"))

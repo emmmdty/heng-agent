@@ -52,7 +52,7 @@ def _harness(sequencing=None, loop_detector=None, confirmation=None) -> HarnessT
 
 
 def _confirmed(session_id: str = "s1"):
-    """走过两轮的会话：第二轮才允许下单（十八期"确认必须跨越一次买家交互"）。
+    """走过两轮的会话：第二轮才允许下单（v18"确认必须跨越一次买家交互"）。
 
     生产里这个计数由编排器在每轮开始时推进；单测直接构造中间件，
     不推进就会落到"无轮次记录 → 只警告"那一档，警告会被追加进返回文本。

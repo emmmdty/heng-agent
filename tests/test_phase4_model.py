@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""四期第一部分：ThrottledChatModel 的闸门持有、退避重试与限流回退
+"""v4 第一部分：ThrottledChatModel 的闸门持有、退避重试与限流回退
 
 桩替换 `_invoke_upstream`，不接触真实网关。
 重点验证流式分支：名额必须持有到流耗尽——若在返回生成器时就释放，限流形同虚设。

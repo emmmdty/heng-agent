@@ -80,7 +80,7 @@ class QueryOrderUseCase:
         self._order_repo = order_repo
 
     async def execute(self, order_id: str, buyer_id: str) -> dict:
-        """查单必须校验归属（红队用例挖出的洞，二十三期清单 6）。
+        """查单必须校验归属（红队用例挖出的洞，v23）。
 
         buyer_id 来自系统上下文，由调用方（工具/端点）注入，不接受买家声明。
         """

@@ -10,9 +10,9 @@
     关税 2.88 元必须来自工具：日本免税额度 500 元，超出的 36 元按 8% 计征
 
 而规则表里 JP 的免税额度是 **480 元**（原生 10,000 JPY），不是 500。
-十一期把它从硬编码的 `10_000 * 5`（手写 0.05 汇率）改成从汇率表推导，
-额度随之 500 → 480，**交接文档把这条列进了"必须知道的行为变化"，
-判据却没人改**。九期之后一直错着，直到这一轮才炸出来。
+v11 把它从硬编码的 `10_000 * 5`（手写 0.05 汇率）改成从汇率表推导，
+额度随之 500 → 480，**这条被列进了"必须知道的行为变化"，
+判据却没人改**。v9 之后一直错着，直到这一轮才炸出来。
 
 Agent 那一轮答的是 612.48 元（12,760 JPY），与工具逐位一致——**它是对的**。
 judge 拿到的事实表也是对的（`| JP | 45 | 10000 JPY | 480 | 其他 8% |`），
@@ -66,7 +66,7 @@ class TestExtractingClaims:
 
 class TestAgainstTheRuleTable:
     def test_the_stale_value_that_actually_shipped_is_rejected(self):
-        """十一期改额度之前的原值。这条测试就是那次 FAIL 的回归。"""
+        """v11 改额度之前的原值。这条测试就是那次 FAIL 的回归。"""
         assert 500.0 not in known_de_minimis_amounts()
 
     def test_every_supported_destination_is_covered(self):

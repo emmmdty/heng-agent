@@ -7,7 +7,7 @@
 2.0 的模型接入方式：OpenAICredential（携带 api_key + base_url，天然支持
 OpenAI 兼容网关）→ OpenAIChatModel(credential=..., model=...)。
 
-四期在此加两层框架不覆盖的东西：
+v4 在此加两层框架不覆盖的东西：
     1. 配额闸门：闸门必须持有到「流耗尽」。流式调用返回的是异步生成器，
        若在 `async with slot()` 内直接 return，名额会在数据还没读完时释放，
        限流等于没做；
@@ -120,7 +120,7 @@ class ThrottledChatModel(OpenAIChatModel):
 
         两个分支都在**知道实际服务模型**的位置包一层 usage 发布
         （_attach_usage）：预算降级与限流回退都会换模型，
-        归错主等于把成本算到别人头上（二十三期清单 2）。
+        归错主等于把成本算到别人头上（v23）。
         """
         tier = current_tier()
         if tier != "main":
@@ -164,7 +164,7 @@ class ThrottledChatModel(OpenAIChatModel):
     def _publish_usage_event(self, response: Any, model_name: str) -> None:
         """把一次上游调用的 token 用量发成 llm.usage 事件。
 
-        二十三期清单 2 的地基：此前 token 只进内存预算账本，流水里没有
+        v23 的地基：此前 token 只进内存预算账本，流水里没有
         usage，成本指标建成也无米下锅。与 _charge_budget 同一条纪律：
         **记账失败绝不能影响主链路**，取不到 usage 就跳过，不编造零。
         """

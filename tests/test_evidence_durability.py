@@ -137,5 +137,5 @@ class TestEphemeralDataDirGuard:
         _guard_ephemeral_data_dir({"data_dir": "/tmp/x/data"}, allow=True)
 
     def test_report_without_data_dir_is_not_blocked(self):
-        """十五期之前的 /health 不报 data_dir——拿不到就别拦，别把老服务锁死。"""
+        """v15 之前的 /health 不报 data_dir——拿不到就别拦，别把老服务锁死。"""
         _guard_ephemeral_data_dir({}, allow=False)

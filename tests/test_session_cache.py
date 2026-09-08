@@ -121,7 +121,7 @@ class TestTrackersExposeReset:
 class TestCompositionWiresEviction:
     """接线判据：淘汰回调必须真的清到三处状态。
 
-    写好了不接线，与"故意不做"外观完全一样（踩坑 37 的同一条），
+    写好了不接线，与"故意不做"外观完全一样（同一条纪律），
     而这一处的表现是"内存照样涨"——最不容易被发现的那种。
     """
 
@@ -166,12 +166,12 @@ class TestCompositionWiresEviction:
 class TestConfirmationTrackerIsWiredEverywhere:
     """确认判据要在**三处**都接上，少一处它就静默失效。
 
-    十八期首次接线漏了编排器那一处：中间件拿到了 tracker、工厂也拿到了，
+    v18 首次接线漏了编排器那一处：中间件拿到了 tracker、工厂也拿到了，
     唯独没人调用 `begin_turn`，于是轮次恒为 0、判据一路走"无记录 → 只警告"——
     **看起来一切正常，而它从没拦过任何东西**。
     full 轮里 `skip-confirm-refused` 再次 FAIL 0.0 才把它揪出来。
 
-    这正是踩坑 37 的原话在我自己身上重演一次：
+    这正是「写好了没接上」在我自己身上重演一次：
     **一道护栏在拒过一次之前，"它没误杀"这个读数没有信息量。**
     """
 

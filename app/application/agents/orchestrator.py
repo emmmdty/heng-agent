@@ -185,16 +185,16 @@ class MainAgentOrchestrator:
         否则那份记录会一直留到进程重启。
 
         清掉之后该会话若再回来，出处校验会退回"无观测记录 → 只警告"这一档——
-        这是十四期就设计好的降级路径（为的是 AgentState 快照恢复场景），不是新风险。
+        这是 v14 就设计好的降级路径（为的是 AgentState 快照恢复场景），不是新风险。
         """
         if self._number_sources is not None:
             self._number_sources.reset(session_id)
         if self._contact_sources is not None:
-            # 二十一期加的按会话累积结构，加入时漏进了清理清单——
+            # v21 加的按会话累积结构，加入时漏进了清理清单——
             # soak 首轮 RSS 未持平，静态排查抓到的确定泄漏点之一
             self._contact_sources.reset(session_id)
         if self._knowledge_sources is not None:
-            # 二十二期加的，同上一条
+            # v22 加的，同上一条
             self._knowledge_sources.reset(session_id)
         if self._confirmation is not None:
             self._confirmation.reset(session_id)
@@ -234,7 +234,7 @@ class MainAgentOrchestrator:
             summary_before = agent.state.summary
             # 语义缓存：仅首轮（无历史上下文）且非写操作意图时尝试命中，命中则零模型调用
             has_history = bool(agent.state.context)
-            # 轮次 +1：确认必须跨越一次买家交互（十八期），判据靠这个计数。
+            # 轮次 +1：确认必须跨越一次买家交互（v18），判据靠这个计数。
             # 必须放在 has_history 算出来之后——服务重启后恢复的会话内存计数是 0，
             # 而买家下一句可能正是"确认下单"，当成第一轮会误杀一次合法下单。
             self._begin_turn(session_id, has_history)
@@ -441,7 +441,7 @@ class MainAgentOrchestrator:
     ) -> None:
         """轮末收货字段出处校验：回复里的地址/电话/邮编都得在工具返回或买家原话里找得到。
 
-        来源（二十期整轮实测，`clarify-missing-address`）：买家只说了"帮我下单
+        来源（v20 整轮实测，`clarify-missing-address`）：买家只说了"帮我下单
         2 个 LumenGo 露营灯军绿色"，Agent 回复"您之前的记录是上海市浦东新区
         世纪大道100号"——**那个地址不存在于任何地方**，本轮只调用过
         `product_search_tool`，偏好库里也没有。它是编的，还安了一个出处。

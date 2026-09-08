@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """basket_misadd 审计与门禁
 
-判据从落地第一天就带下游（二十期的教训：只做"检测"不做"暴露"的判据
+判据从落地第一天就带下游（v20 的教训：只做"检测"不做"暴露"的判据
 在真实评测里等价于不存在）。本模块钉住三件事：
 
 1. 违规判定的四个条件在审计路径上同样成立（与运行时同一份纯函数）；
 2. "分开买合计"这类合法用法在真实流水的原文措辞下不被误报；
-3. 门禁口径：命中一处即红，且"没东西可判"不许冒充"全对"（踩坑 33）。
+3. 门禁口径：命中一处即红，且"没东西可判"不许冒充"全对"。
 """
 import json
 
@@ -93,7 +93,7 @@ class TestGate:
         assert not gate_verdict(summary).passed
 
     def test_no_basket_quotes_is_not_a_pass(self):
-        """0 个组合报价的"0 违规"没有信息量，判词必须把它说破（踩坑 33）。"""
+        """0 个组合报价的"0 违规"没有信息量，判词必须把它说破。"""
         summary = {"sessions": 5, "sessions_with_basket_quote": 0,
                    "amounts": 12, "violations": 0}
         verdict = gate_verdict(summary)

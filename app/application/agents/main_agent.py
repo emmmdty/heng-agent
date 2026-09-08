@@ -96,13 +96,13 @@ class MainAgentFactory:
         )
         # #14 C3：skill 阶段控制器（flag 开时由 composition 注入）。
         # 注入即启用：Task* 死重移出 toolkit、system prompt 换成阶段化拼装。
-        # None = flag 关，Agent 构造路径与二十六期逐字节一致（B2 resume 依赖）。
+        # None = flag 关，Agent 构造路径与 v26 逐字节一致（B2 resume 依赖）。
         self._skill_stage = skill_stage
 
     def _resilience(self) -> list:
         """工具中间件链——与检索/订单两个工厂共用同一份定义。
 
-        十四期之前这里各写了一遍：主 Agent 这份带 Harness，另外两个工厂那份只有熔断，
+        v14 之前这里各写了一遍：主 Agent 这份带 Harness，另外两个工厂那份只有熔断，
         于是业务工具上的顺序硬拒、schema 断言、L3 过滤一次都没跑过
         （见 `tests/test_harness_wiring.py`）。收成一处才防得住下一次。
         """
@@ -193,7 +193,7 @@ class SessionRegistry:
     """按 shopping_session_id 缓存 MainAgent 实例，支撑多轮对话；
     AgentState 经 SessionStore 端口落盘（SQLite 或文件），服务重启后恢复。
 
-    **有上限（LRU）**：十七期之前这个字典只增不减，而每个 Agent 揣着整段对话上下文，
+    **有上限（LRU）**：v17 之前这个字典只增不减，而每个 Agent 揣着整段对话上下文，
     于是进程内存随"见过多少个不同会话"单调增长，直到重启。
     本地看不出来（会话就那么几个），压测也看不出来（用的会话数很少），
     只有长跑的线上进程会慢慢涨——**这类涨法没有任何一条告警会响**。
@@ -247,7 +247,7 @@ class SessionRegistry:
             # 淘汰当下显式关闭 model 链的 HTTP 客户端（主 + 备用）——
             # openai SDK 的 __del__ 兜底是 fire-and-forget，执行时机不可控；
             # 在那之前每会话 8 个 transport + 8 个 SSLContext 一直占内存
-            # （soak 首轮 RSS 拐点后不归零的成因，二十三期清单 7）
+            # （soak 首轮 RSS 拐点后不归零的成因，v23）
             self._close_agent_model(agent)
             if self._on_evict is None:
                 continue

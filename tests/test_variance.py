@@ -82,7 +82,7 @@ class TestGroupingEndToEnd:
         """同配置、同用例集，仅启动时刻不同的两轮进同一组。
 
         注意两条报告必须是**同一个 case id**：整轮均分的可比性由用例集身份
-        保证（二十三期清单 4），跑的不是同一份考卷就不该进同一组。"""
+        保证（v23），跑的不是同一份考卷就不该进同一组。"""
         reports = [_report(FRESH_A, "a", 1.0), _report(FRESH_B, "a", 0.8)]
         means = run_level_means(reports)
         assert len(means) == 1

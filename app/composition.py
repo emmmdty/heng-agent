@@ -7,7 +7,7 @@ API 进程与 worker 进程共用同一份接线，避免两处各自 new 一套
 所有外部依赖都是可选的，按「不配就降级」设计：
     DATABASE_URL 未配 → SQLite；= "file" → JSON 文件存储
     REDIS_URL    未配 → 无缓存、无队列、无跨进程事件背板
-    QUEUE_ENABLED=0  → 不入队，请求在 API 进程内直接跑（三期行为）
+    QUEUE_ENABLED=0  → 不入队，请求在 API 进程内直接跑（v3 行为）
 """
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ class Container:
     db_engine: Any
     # 跑测身份：让 /health 能自报"这个读数是哪套配置跑出来的"
     prompt_fingerprint: str = ""
-    # 二十五期任务 A：提示词变体名（空 = 基线）。A/B 两臂各自起实例，
+    # v25 任务 A：提示词变体名（空 = 基线）。A/B 两臂各自起实例，
     # 变体名由 PROMPT_VARIANT 环境变量进来，是评测读数归因的主键。
     prompt_variant: str = ""
     reranker_enabled: bool = False
@@ -242,15 +242,15 @@ async def build_container() -> Container:
     # 护栏判定器同样全进程唯一：按会话累积状态，需跨 Agent 实例与轮次共享
     sequencing_tracker = SequencingTracker()
     loop_detector = LoopDetector(repeat_threshold=settings.loop_repeat_threshold)
-    # 下单参数出处校验（十四期）：与顺序断言同样按会话累积，必须全进程唯一
+    # 下单参数出处校验（v14）：与顺序断言同样按会话累积，必须全进程唯一
     order_provenance_tracker = OrderProvenanceTracker()
-    # 确认必须跨越一次买家交互（十八期）：轮次按会话累积，同样全进程唯一
+    # 确认必须跨越一次买家交互（v18）：轮次按会话累积，同样全进程唯一
     confirmation_tracker = ConfirmationTracker()
 
     def tool_middlewares() -> list:
         """每个工具一条新链（中间件实例不共享），但判定器是同一批。
 
-        三个 Agent 工厂共用这一个 provider——十四期之前它们各建各的，
+        三个 Agent 工厂共用这一个 provider——v14 之前它们各建各的，
         结果业务工具压根没挂上 Harness（tests/test_harness_wiring.py 钉住了这件事）。
         """
         return build_tool_middlewares(
@@ -335,7 +335,7 @@ async def build_container() -> Container:
         loop_detector=loop_detector,
         # 轮次由编排器推进——漏传这一个，ConfirmationTracker 就永远停在 0 轮，
         # 判据一路走"无记录 → 只警告"，看起来一切正常而实际从没拦过任何东西。
-        # 十八期首次接线就漏了它，靠 full 轮里 skip-confirm-refused 再次 FAIL 才发现。
+        # v18 首次接线就漏了它，靠 full 轮里 skip-confirm-refused 再次 FAIL 才发现。
         confirmation=confirmation_tracker,
         token_budget_total=settings.token_budget_total,
         drift_detector=drift_detector,

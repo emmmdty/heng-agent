@@ -56,10 +56,10 @@ class HarnessToolMiddleware(ToolMiddlewareBase):
     ) -> None:
         self._sequencing = sequencing
         self._loop_detector = loop_detector
-        # 下单参数出处校验（十四期）。可选是为了让既有单测不必逐个改造，
+        # 下单参数出处校验（v14）。可选是为了让既有单测不必逐个改造，
         # 但组装根一律注入——写路径少一道判据的代价是错误订单已经落库。
         self._order_provenance = order_provenance or OrderProvenanceTracker()
-        # 确认必须跨越一次买家交互（十八期）：轮次由编排器告知，
+        # 确认必须跨越一次买家交互（v18）：轮次由编排器告知，
         # 中间件只在工具边界被调用，看不到轮次边界，不能自己猜。
         self._confirmation = confirmation or ConfirmationTracker()
         self._bus = bus
@@ -248,7 +248,7 @@ def build_tool_middlewares(
     洋葱顺序：Harness 在外、Resilience 在内。先做准入判定（顺序 / 出处 / 循环），
     再进超时与熔断保护；这样被硬拒的调用不会白白占用一次熔断名额。
 
-    为什么要收成一个函数：十四期发现**业务工具其实从没挂上 Harness**——
+    为什么要收成一个函数：v14 发现**业务工具其实从没挂上 Harness**——
     每个工厂各写了一遍 `_resilience()`，主 Agent 那份带 Harness，
     检索与订单两个工厂那份只有熔断。于是顺序硬拒、schema 断言、L3 注入过滤
     在真正需要它们的工具上一次都没跑过，而外观与"故意不做"完全一样。

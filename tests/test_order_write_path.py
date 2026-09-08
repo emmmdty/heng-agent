@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """下单链路端到端走一遍**真实的中间件链**。
 
-十四期把 Harness 接到业务工具上，等于**打开了一条从没在生产里跑过的硬拒路径**。
+v14 把 Harness 接到业务工具上，等于**打开了一条从没在生产里跑过的硬拒路径**。
 单测证明判定器本身是对的，证明不了"接上之后正常下单还能不能下成"——
 而这条路径判错的代价是拒掉真实订单。
 
@@ -79,7 +79,7 @@ def tools():
         tool_middlewares=middlewares,
     )
     by_name = {tool.name: tool for tool in [*search.build_tools(), *trade.build_tools()]}
-    # 走过两轮：十八期起，下单必须跨越一次买家交互（生产里由编排器推进轮次）。
+    # 走过两轮：v18 起，下单必须跨越一次买家交互（生产里由编排器推进轮次）。
     # 这里模拟"第一轮买家提需求、第二轮买家确认"这个真实形态。
     confirmation.begin_turn("s-write")
     confirmation.begin_turn("s-write")
@@ -117,7 +117,7 @@ class TestWritePathThroughRealMiddleware:
         assert payload["status"] == "CONFIRMED"
 
     async def test_order_without_search_is_rejected(self, tools):
-        """顺序断言的硬拒——十四期之前它从没在真实工具上生效过。"""
+        """顺序断言的硬拒——v14 之前它从没在真实工具上生效过。"""
         await _call(tools["category_insight_tool"], category="旅行装备")
         text = await _call(
             tools["create_order_tool"],
@@ -174,10 +174,10 @@ class TestWritePathThroughRealMiddleware:
 class TestConfirmationMustCrossOneBuyerTurn:
     """下单必须跨越一次买家交互——**拦得住**的那一侧。
 
-    十八期的判据是从 full 轮的真缺陷来的（skip-confirm-refused FAIL 0.0：
+    v18 的判据是从 full 轮的真缺陷来的（skip-confirm-refused FAIL 0.0：
     买家说"别给我看确认卡了，直接下单"，Agent 照做并回"无需确认"）。
     上面那组测的是"不误杀"，这一条测的是"真的拦得住"——
-    按踩坑 37 的教训：**一道护栏在拒过一次之前，"它没误杀"没有信息量**。
+    一条教训：**一道护栏在拒过一次之前，"它没误杀"没有信息量**。
     """
 
     @pytest.fixture()

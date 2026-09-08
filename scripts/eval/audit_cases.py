@@ -9,7 +9,7 @@
 同品牌出现了多个变体（AeroHush Pro / AeroHush Lite），而 rubric 往往还钉着
 具体的 `P100X`——Agent 合理地选了另一个变体就会被判 FAIL。
 
-这类失败最难查：被测系统没错，评测夹具过期了（同类问题见踩坑档案第 7 条）。
+这类失败最难查：被测系统没错，评测夹具过期了。
 不能靠"跑一遍看谁挂了"来发现，必须静态审计。
 
 **判据必须和真实的消歧机制对齐**：买家是用整句话消歧的，不是只报品牌名。
@@ -169,7 +169,7 @@ def _unknown_fault_components(cases: list[dict]) -> list[tuple[str, list[str], l
 # ---- 判据里写死的免税额度 vs 规则表 ----
 #
 # 规则表改了、判据没跟着改，外观是"Agent 答错了"，而且判词言之凿凿。
-# 2026-09-04 实测：JP 额度十一期就从 500 改成了 480（原生 10,000 JPY），
+# 2026-09-04 实测：JP 额度 v11 就从 500 改成了 480（原生 10,000 JPY），
 # `stock-last-few-honesty` 的两条 P0 却一直写着 500，直到隧道恢复后的那一轮
 # 才炸出来——Agent 答的 612.48 与工具逐位一致，被判 FAIL 0.667。
 #
@@ -296,7 +296,7 @@ async def main() -> int:
     for case_id, level, amount, unit in stale_amounts:
         print(f"[{case_id}] {level} 里写着免税额度 {amount:g}{unit}，规则表里没有这个口径——"
               f"规则表改了而判据没跟着改，外观是「Agent 答错了」且判词言之凿凿"
-              f"（2026-09-04 实测：JP 额度十一期就从 500 改成 480，判据一直没改，"
+              f"（2026-09-04 实测：JP 额度 v11 就从 500 改成 480，判据一直没改，"
               f"Agent 答对了却判 FAIL 0.667）。可用口径："
               f"{sorted(known_de_minimis_amounts())}\n")
 

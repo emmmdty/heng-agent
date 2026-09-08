@@ -10,16 +10,16 @@ Presentation 层按 shopping_session_id 订阅后推送给前端 WebSocket。
     tool.result         工具执行完成
     token.delta         流式 token 增量
     plan.update         Task 计划变更
-    context.compressed  上下文压缩发生（三期：Context 工程）
-    model.fallback      主模型限流重试用尽，已回退到备用模型（四期）
-    llm.usage           一次上游调用的 token 用量，model 记实际服务的模型（二十三期）
-    cache.hit           语义缓存命中，本轮未调模型（四期）
-    number.unsourced    回复里出现了没有工具出处的金额（五期：金额出处校验）
-    arith.inconsistent  回复里写出来的算式等号两边对不上（十九期：算式自洽）
-    contact.unsourced   回复里出现了买家没给过、工具也没返回过的收货字段（二十一期）
-    knowledge.unsourced 回复声称内容来自知识库，而本会话没有成功的知识库返回（二十二期）
-    task.queued         意图已入队，等待 worker 领取（四期）
-    task.started        worker 已开始处理（四期）
+    context.compressed  上下文压缩发生（v3：Context 工程）
+    model.fallback      主模型限流重试用尽，已回退到备用模型（v4）
+    llm.usage           一次上游调用的 token 用量，model 记实际服务的模型（v23）
+    cache.hit           语义缓存命中，本轮未调模型（v4）
+    number.unsourced    回复里出现了没有工具出处的金额（v5：金额出处校验）
+    arith.inconsistent  回复里写出来的算式等号两边对不上（v19：算式自洽）
+    contact.unsourced   回复里出现了买家没给过、工具也没返回过的收货字段（v21）
+    knowledge.unsourced 回复声称内容来自知识库，而本会话没有成功的知识库返回（v22）
+    task.queued         意图已入队，等待 worker 领取（v4）
+    task.started        worker 已开始处理（v4）
     final.result        最终回复
     error               异常
 """
@@ -82,7 +82,7 @@ class TradeEvent:
 class TradeEventBus:
     """asyncio 版发布订阅：每个订阅者一个独立 Queue，互不阻塞。
 
-    四期加了跨进程背板（backplane）：worker 拆成独立进程后，它产生的
+    v4 加了跨进程背板（backplane）：worker 拆成独立进程后，它产生的
     token.delta / tool.* 事件本来推不到 API 进程的 WS 连接（前端会一片空白）。
     接上背板后：publish 除了派给本进程订阅者，还会广播到 Redis；
     API 进程订阅后转发给本地 WS。

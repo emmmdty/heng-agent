@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """检索依赖的深度探活，以及配置行如实渲染。
 
-十四期小样本实测暴露的缺口：报告配置行写着"精排 开"，
+v14 小样本实测暴露的缺口：报告配置行写着"精排 开"，
 而同一轮轨迹里 `recall_strategy` 是 `bm25_only`——两条隧道都是 502，
 精排一次都没跑过。配置行不是写错了，是它**问错了问题**：
 它读的是 `RERANKER_BASE_URL` 配没配，而不是那个地址通不通。
 
-与踩坑 32（服务跑着旧代码）完全同构：分数标着一个并不成立的配置，
+与「服务跑着旧代码」那次完全同构：分数标着一个并不成立的配置，
 横向比较必然得出错的结论，甚至可能得出"精排没用"——
 而真相是这一轮压根没有精排。
 """
@@ -111,7 +111,7 @@ class TestRunLineTellsTheTruth:
         """向量路挂掉要单独说：它解释了为什么档位掉到 bm25_only。
 
         配置行里原本没有向量路这一格——它一直被当成"配了就有"，
-        而十四期那一轮它整条不可用。
+        而 v14 那一轮它整条不可用。
         """
         line = self._line({"embedding": "error: HTTP 502", "reranker": "ok"})
         assert "向量路 实测不可达" in line
@@ -126,7 +126,7 @@ class TestRunLineTellsTheTruth:
 
 
 class TestWiring:
-    """接线判据：探活写好了但没人调，等于没写（七期与十四期的同一条）。"""
+    """接线判据：探活写好了但没人调，等于没写（v7 与 v14 的同一条）。"""
 
     def test_health_accepts_deep_and_calls_the_probe(self):
         import inspect

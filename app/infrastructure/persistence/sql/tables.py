@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """关系库表结构定义（SQLAlchemy 2.0 声明式）
 
-四期落库范围：对话记录 + 会话状态 + 订单 + 买家偏好。
+v4 落库范围：对话记录 + 会话状态 + 订单 + 买家偏好。
 商品目录不落库（会牵动向量建库与评测事实表构造，留后续）。
 
 建表策略：启动时用 `create_all` 幂等建表。生产环境应换成 Alembic 迁移
@@ -63,7 +63,7 @@ class ConversationMessageRow(Base):
     content: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(64), default="")
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
-    # 本轮模型调用的 token 求和（二十三期清单 2）。create_all 不会改已存在的表：
+    # 本轮模型调用的 token 求和（v23）。create_all 不会改已存在的表：
     # 老库上 INSERT 会因缺列整体失败（被编排器吞成 warning，轮记录消失），
     # 必须重建库或手工执行：
     #   ALTER TABLE conversation_messages ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0;

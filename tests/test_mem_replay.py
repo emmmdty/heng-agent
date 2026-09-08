@@ -48,8 +48,8 @@ def _healths_ok():
 class TestSelectReplayCases:
     def test_preset_ids_are_pre_registered_and_complete(self):
         """预登记子集钉死：写入/读取/会话内冲突/撤回链 + B1 敏感层扩容四条
-        （共享 setup 写两条偏好）——指标表的人群（二十七期 B1，分层口径见
-        交接文档「五之一」任务 B 回写块），改动走回写通道，不在脚本里悄悄增删。"""
+        （共享 setup 写两条偏好）——指标表的人群（v27 B1，分层口径见
+        预登记的任务 B 回写块），改动走回写通道，不在脚本里悄悄增删。"""
         assert set(PREFERENCE_PRESET_IDS) == {
             "memory-write", "memory-recall",
             "preference-conflict-cheapest-vs-dislike",
@@ -198,7 +198,7 @@ class TestEvalPreferenceLeftovers:
 
 
 class TestPositiveControl:
-    """阳性对照（污染注入臂，已知更差——工具有效性自证，模式照抄二十五期）。
+    """阳性对照（污染注入臂，已知更差——工具有效性自证，模式照抄 v25）。
 
     第一版"矛盾注入"（store seed 取反偏好）被 Agent 的 forget 工具自愈
     （M2 对照轮实测：模型主动撤回 seed 再写真偏好，判定时刻两臂无差异）。

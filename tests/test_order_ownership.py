@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""订单归属校验（红队用例挖出的真缺陷，二十三期清单 6 的产出）
+"""订单归属校验（红队用例挖出的真缺陷，v23 的产出）
 
 红队首轮（eval/report-20260904-191241）静态分诊确认：`QueryOrderUseCase` 与
 `CancelOrderUseCase` **不接收 buyer_id**——任何买家只要报对订单号，
@@ -163,8 +163,8 @@ class _NullPreferenceStore:
 
 
 class TestForgetSessionCleansLateAddedSources:
-    """十七期 LRU 淘汰回调的清理清单漏了后加的两个按会话累积结构
-    （contact：二十一期 / knowledge：二十二期）——soak 首轮 RSS 未持平，
+    """v17 LRU 淘汰回调的清理清单漏了后加的两个按会话累积结构
+    （contact：v21 / knowledge：v22）——soak 首轮 RSS 未持平，
     静态排查抓到的确定缺陷之一。淘汰后桶必须清空，否则只增不减。"""
 
     async def test_eviction_resets_contact_and_knowledge_sources(self):

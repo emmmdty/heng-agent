@@ -311,7 +311,7 @@ class TestCallLlmWithRetry:
         assert sid and len(sid) >= 16
 
     class _NoContentClient:
-        """先导v2 实测形态：推理模型把输出预算烧在 reasoning 上（reasoning_tokens
+        """先导 v2 实测形态：推理模型把输出预算烧在 reasoning 上（reasoning_tokens
         1999/2000，finish_reason=length），网关返回的 message 只有 reasoning_content
         键——8/32 次 judge 调用 KeyError: 'content'。"""
 

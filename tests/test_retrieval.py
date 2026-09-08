@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""二期检索链路单测：二阶段召回 / 降级链 / 价格硬约束 / 到手价内联。
+"""v2 检索链路单测：二阶段召回 / 降级链 / 价格硬约束 / 到手价内联。
 
 embedding 用确定性桩实现（关键词特征轴 + 余弦），向量索引用 Qdrant 本地嵌入模式，
 全程不依赖外部服务与 LLM。
@@ -117,7 +117,7 @@ class TestTwoStageRecall:
 
     async def test_over_price_cap_candidate_reported_in_filtered_out(self, indexed):
         """超预算候选必须如实回传，否则模型会把"有但超预算"答成"没有这个商品"
-        （三期评测 long-context-memory 曾暴露此缺陷）。"""
+        （v3 评测 long-context-memory 曾暴露此缺陷）。"""
         repo, embedder, index = indexed
         usecase = CatalogSearchUseCase(repo, embedder=embedder, vector_index=index)
         result = await usecase.execute(
@@ -174,7 +174,7 @@ class TestTwoStageRecall:
 
     async def test_tool_event_carries_hits_for_frontend(self, indexed):
         """tool.result 事件必须带可渲染的商品卡，否则前端商品卡区域一片空白
-        （三期浏览器验证曾暴露此缺陷：事件只带 hit_count 没带 hits）。
+        （v3 浏览器验证曾暴露此缺陷：事件只带 hit_count 没带 hits）。
 
         断言锁的是**商品卡契约**而不是具体命中哪个商品：本用例要防的回归是
         "事件丢字段"，排序质量由召回评测（`scripts/eval/run_product_recall.py`）负责。
@@ -218,12 +218,12 @@ class TestTwoStageRecall:
 class TestUnsupportedDestination:
     """规则表不认识的目的国，必须和"这件商品不发那儿"区分开。
 
-    九期评测实测挖出：买家问"寄到欧盟"，Agent 合理地把它翻成具体国家码
+    v9 评测实测挖出：买家问"寄到欧盟"，Agent 合理地把它翻成具体国家码
     试了 DE 和 FR（工具参数当时写的是"收货国家二位码，如 CN、US"，
     正是这么诱导的）。规则表只认 CN/US/EU/JP/SG，于是**每一个商品**都被
     逐个标成 `ship_to_unavailable`，Agent 看到的是"所有 TrailOx 都不发欧盟"，
     只好放弃到手价、转而凭自己的知识说"欧盟免税额度约 €150"——
-    正是八期补 `de_minimis_threshold_major` 要防的行为，从另一条路径又回来了。
+    正是 v8 补 `de_minimis_threshold_major` 要防的行为，从另一条路径又回来了。
 
     两处都要修：
       1. 语义分清。系统不认识 DE，不代表商品不发德国——据此过滤商品是错的判断。
@@ -270,7 +270,7 @@ class TestUnsupportedDestination:
         result = await usecase.execute(
             ProductSearchSpec(normalized_query="行李箱 铝框", ship_to="DE"),
         )
-        assert result["hits"], "哨兵：没有商品卡的话，下面的断言会平凡通过（踩坑 29）"
+        assert result["hits"], "哨兵：没有商品卡的话，下面的断言会平凡通过"
         for hit in result["hits"]:
             assert hit.get("landed_price") is None, "目的国不支持时不得内联到手价"
             for sku in hit.get("skus", []):

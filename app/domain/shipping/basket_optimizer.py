@@ -175,7 +175,7 @@ class BasketPlan:
                 for line in self.selection
             ],
             # 完整报价原样带上：小计/运费/关税/免税额度/应税基数都在里面，
-            # 少带一个字段模型就得自己算一个（八期与十一期反复验证过的事）
+            # 少带一个字段模型就得自己算一个（v8 与 v11 反复验证过的事）
             "quote": self.quote.to_dict() if self.quote else None,
             "uncovered_needs": [item.to_dict() for item in self.uncovered],
             "separate_purchase_landed_major": round(
@@ -200,7 +200,7 @@ def _line_of(group: NeedGroup, candidate: NeedCandidate) -> BasketLine:
 def _validate(tariff: TariffSchedule, groups: list[NeedGroup], ship_to: str) -> None:
     """入口校验。
 
-    目的国规则表支持性放在最前面（十期教训）：顺序反了的话，传 DE 会先撞上
+    目的国规则表支持性放在最前面（v10 教训）：顺序反了的话，传 DE 会先撞上
     "某商品不可寄往 DE"，模型据此告诉买家"这些商品不发欧盟"，
     而真相是规则表根本没有 DE——**报的是一句模型无法识破的错话**。
     """
@@ -338,7 +338,7 @@ def optimize_basket(
         )
 
     # 分开买的对照直接读报价，不在这里再算一遍：
-    # 十六期把它下沉进了 `quote_basket()`，两个工具从同一个 BasketQuote 上读。
+    # v16 把它下沉进了 `quote_basket()`，两个工具从同一个 BasketQuote 上读。
     # 各算各的会变成三处口径，而"分开买怎么算"只该有一个定义。
     separate_minor = (
         quote.separate_purchase_landed.amount_in_minor_units

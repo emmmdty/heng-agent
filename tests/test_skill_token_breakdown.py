@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """C1：prompt token 构成分解（#14 Skill 渐进加载的设计依据）。
 
-任务书口径（二十七期 C1）：下钻 prompt token 构成——system prompt 固定段 /
+任务定义口径（v27 C1）：下钻 prompt token 构成——system prompt 固定段 /
 工具 schema / 上下文历史 / 注入块各占多少，P50/P95 分布按用例形态分组；
 产出 skill 化候选片段清单。没有构成数据不写 loader（C2 的前置）。
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""turn 记录的 usage 落盘 + 编排器接线（二十三期清单 2）
+"""turn 记录的 usage 落盘 + 编排器接线（v23）
 
 模型层发 llm.usage 事件只解决了"事件存在"；要让它进流水，还差两段接线：
     1. 编排器把本轮 drain 到的 llm.usage 事件**求和后写上 agent turn**——

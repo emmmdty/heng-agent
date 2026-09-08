@@ -293,8 +293,8 @@ class TestPricingToolSchemas:
     """计价工具的关键字段进 schema 断言。
 
     这两个工具回的每个字段都是模型要抄进回复的数字，少一个模型就得自己算一个——
-    正是金额出处校验反复抓到的那类缺口（八期的 de_minimis 阈值、
-    十期的应税基数，都是"工具没回、模型自己编"）。
+    正是金额出处校验反复抓到的那类缺口（v8 的 de_minimis 阈值、
+    v10 的应税基数，都是"工具没回、模型自己编"）。
     把字段名钉进断言表，改坏了当轮就有 [harness] 提示，而不是等评测跑完看分数。
     """
 
@@ -339,9 +339,9 @@ class TestPricingToolSchemas:
 class TestOutputGuardToolListStaysInSync:
     """L4 的内部工具名清单必须跟着工具集走。
 
-    十六期发现它停在八期的状态：后来加的 quote_basket / optimize_basket /
+    v16 发现它停在 v8 的状态：后来加的 quote_basket / optimize_basket /
     forget_preference 三个都不在里面——**漏一个就等于那个工具名可以原样
-    出现在买家回复里，而没有任何东西会报警**（同踩坑 37「写好了没接上」）。
+    出现在买家回复里，而没有任何东西会报警**（同「写好了没接上」那类）。
 
     这类"清单与实现脱钩"在本仓已经出现过三次（工具描述里的目的国枚举、
     Harness 接线、这一处），共同点是：脱钩之后的外观与"故意不做"完全一样。

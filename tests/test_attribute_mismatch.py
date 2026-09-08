@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """属性不匹配的显式化：候选不具备买家点名要的属性时，返回里必须说出来
 
-判据来自二十期整轮实测（`conflict-budget-spec`，七轮历史
+判据来自 v20 整轮实测（`conflict-budget-spec`，七轮历史
 `PASS PASS PASS FAIL FAIL PASS FAIL`——**间歇性缺陷**）：
 
 买家："预算 200 元，给我来一副顶配的主动降噪耳机。"
@@ -10,9 +10,9 @@ Agent 把 `AeroHush Lite`（半入耳、¥299、**只有通话降噪**）列在
 
 **前两次修都是在动召回，都没拦住**：
 
-    十九期  把"无主动降噪 ANC"写进 description   → 帮了倒忙：BM25 不理解否定，
-                                                   看见词就命中，召回反而更强（踩坑 46）
-    十九期  改成不可检索的 highlight              → 字面路压下去了（BM25 3.035 < 门限 4.0），
+    v19  把"无主动降噪 ANC"写进 description   → 帮了倒忙：BM25 不理解否定，
+                                                   看见词就命中，召回反而更强
+    v19  改成不可检索的 highlight              → 字面路压下去了（BM25 3.035 < 门限 4.0），
                                                    但**向量路照样召回**（读数纪律 4）
 
 所以这一次不动召回，动**工具返回的结构**。理由是四次成功先例的共同点：
@@ -42,7 +42,7 @@ class TestNegatedAttributeIsDeclared:
         assert product.absent_attributes() == []
 
     def test_negated_highlight_stays_out_of_the_lexical_index(self):
-        """踩坑 46 的回归：否定说明进了可检索文本，BM25 反而更强地召回它。"""
+        """回归：否定说明进了可检索文本，BM25 反而更强地召回它。"""
         product = next(p for p in build_seed_products() if p.product_id == "P1022")
         assert "无主动降噪" not in product.searchable_text()
 
@@ -114,7 +114,7 @@ class TestSearchResultCarriesTheMismatch:
 class TestFilteredOutCarriesTheMismatchToo:
     """被硬约束挡掉的候选**同样**要带声明——而且这条比 hits 更要紧。
 
-    二十一期定向重跑第三轮实测（`report-20260904-131821`，FAIL 0.75）：
+    v21 定向重跑第三轮实测（`report-20260904-131821`，FAIL 0.75）：
     买家说"预算 200 元"，于是 299 元的 AeroHush Lite 被 `over_price_cap` 挡进
     `filtered_out`；而 `_to_rejected()` 只回 product_id / title / category /
     price / reason，**结构化声明根本没到模型手上**。模型照旧写出
@@ -160,7 +160,7 @@ def _sku():
 def _use_case() -> CatalogSearchUseCase:
     """只用关键词降级路：这条判据与召回档位无关，不该依赖外部服务。
 
-    走降级路是刻意的——十九期栽过的正是"只在字面路上验证一个召回相关的修复"
+    走降级路是刻意的——v19 栽过的正是"只在字面路上验证一个召回相关的修复"
     （读数纪律 4）。但本判据**不动召回**，它作用在结果装配上，
     对每一档都一样，所以用最便宜的那一档验证是成立的。
     """
