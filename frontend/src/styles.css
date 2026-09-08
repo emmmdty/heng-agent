@@ -287,3 +287,66 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+.turn .text.markdown {
+  white-space: normal;
+  min-width: 0;
+}
+
+.turn .text.markdown > :first-child {
+  margin-top: 0;
+}
+
+.turn .text.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.turn .text.markdown h3,
+.turn .text.markdown h4 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+
+.turn .text.markdown p {
+  margin: 6px 0;
+}
+
+.turn .text.markdown ul,
+.turn .text.markdown ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.turn .text.markdown blockquote {
+  margin: 8px 0;
+  padding: 4px 10px;
+  border-left: 3px solid #c7d2fe;
+  color: #4b5563;
+  background: #f8fafc;
+  border-radius: 0 6px 6px 0;
+}
+
+.turn .text.markdown table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.turn .text.markdown th,
+.turn .text.markdown td {
+  border: 1px solid #e5e7eb;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.turn .text.markdown th {
+  background: #f3f4f6;
+}
+
+.turn .text.markdown code {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12.5px;
+}

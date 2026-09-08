@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import EventTimeline from "./components/EventTimeline";
 import ProductCards from "./components/ProductCards";
 import type { TradeEvent } from "./types";
@@ -118,7 +120,13 @@ export default function App() {
             {turns.map((turn, index) => (
               <div key={index} className={`turn ${turn.role}`}>
                 <div className="who">{turn.role === "buyer" ? "我" : "衡 · Heng"}</div>
-                <div className="text">{turn.text}</div>
+                {turn.role === "buyer" ? (
+                  <div className="text">{turn.text}</div>
+                ) : (
+                  <div className="text markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.text}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             ))}
             {streaming && (
