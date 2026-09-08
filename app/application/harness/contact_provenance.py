@@ -139,7 +139,7 @@ def _value_matches_form(kind: str, value: str) -> bool:
 
 
 def _labeled_field_claims(text: str) -> list[ContactClaim]:
-    """逐行扫确认卡里的"标签 → 值"断言。
+    r"""逐行扫确认卡里的"标签 → 值"断言。
 
     为什么逐行而不是一个正则：markdown 确认卡的排版花样多——粗体标签
     （`**收货地址**`）、表格竖线、引用块、分隔线。实测一个跨行 `\s*` 会把
