@@ -9,6 +9,13 @@
 买家一句自然语言诉求，Agent 完成品类洞察、商品检索、到手价计算、组合优化和下单交易，
 全过程通过 WebSocket 事件流实时可见。基于 **AgentScope 2.0**，DDD 洋葱架构。
 
+> **English TL;DR** — A cross-border e-commerce shopping agent on **AgentScope 2.0** with a DDD onion
+> architecture: category insight → product retrieval → landed price → basket optimization → ordering,
+> every step visible in real time over a WebSocket event stream. The real substance is
+> **agent credibility engineering**: deterministic criteria + tiered evaluation + statistical
+> certification, so every "it got better" has provenance, criteria and a reproduction command.
+> **1,375 unit tests green.**
+
 真正花功夫的地方不是"让 Agent 能跑"，而是 **Agent 可信度工程**：
 确定性判据 + 分级评测 + 统计认证，让每一个"变好了"都有出处、判据和复现命令。
 
@@ -42,6 +49,19 @@ LLM Agent 很容易做出一个"看起来能用"的 demo，难的是回答三个
 
 左侧是 DDD 洋葱的运行时主链路；右侧的**可信度工程**与主链路同等大小——
 评测不是附属品，是与交付能力并行的一等公民：会话流水喂评测，判读结论反哺提示词与判据。
+
+### 效果预览
+
+<p align="center">
+  <img src="assets/screenshot-chat.png" alt="对话 + 商品卡 + 事件时间线" width="900">
+</p>
+
+一条意图的实时全景：左侧对话与商品卡，右侧事件时间线（工具开始/完成、token 用量、最终回复）。
+检索走默认 hybrid_rerank 档；embedding / reranker 不可用时自动降级并在事件流里如实标注。
+
+<p align="center">
+  <img src="assets/screenshot-timeline.png" alt="事件时间线" width="380">
+</p>
 
 ## 快速开始
 
